@@ -144,7 +144,8 @@ class ExportService
             $exportId,
             $totalRecords,
             &$lastLoggedProgress,
-            $logInterval
+            $logInterval,
+            $chunkSize
         ) {
             $driver->writeBatch($records, $columns, $handle);
 
@@ -168,7 +169,7 @@ class ExportService
         });
 
         fclose($handle);
-        $driver->finalize(null, storage_path('app/' . $filePath));
+        $driver->finalize(storage_path('app/' . $filePath), null);
 
         return $filePath;
     }
@@ -182,7 +183,7 @@ class ExportService
         int $totalRecords,
         int $chunkSize
     ): string {
-        $driver->writeHeader($columns);
+        $driver->writeHeader($columns, null);
 
         $exportedRecords = 0;
         $lastLoggedProgress = 0;
@@ -195,7 +196,7 @@ class ExportService
             $totalRecords,
             &$lastLoggedProgress
         ) {
-            $driver->writeBatch($records, $columns);
+            $driver->writeBatch($records, $columns, null);
 
             $exportedRecords += $records->count();
             $progress = (int) (($exportedRecords / $totalRecords) * 100);
@@ -208,7 +209,7 @@ class ExportService
             }
         });
 
-        return $driver->finalize(null, storage_path('app/' . $filePath));
+        return $driver->finalize(storage_path('app/' . $filePath), null);
     }
 
     public function getProgress(string $exportId): array

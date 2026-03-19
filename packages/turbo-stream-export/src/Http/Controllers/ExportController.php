@@ -25,7 +25,7 @@ class ExportController extends Controller
             'model' => ['required', 'string'],
             'columns' => ['required', 'array', 'min:1'],
             'filters' => ['sometimes', 'array'],
-            'format' => ['sometimes', 'string', 'in:csv,xlsx'],
+            'format' => ['sometimes', 'string', 'in:csv,xlsx,pdf,docx,sql'],
             'filename' => ['sometimes', 'string'],
         ]);
 
@@ -87,12 +87,14 @@ class ExportController extends Controller
 
         $filePath = $progress['file_path'];
         
-        if (!Storage::disk(config('turbo-export.disk'))->exists($filePath)) {
-            return response()->json(['error' => 'File not found'], 404);
+        $relativePath = str_replace(storage_path('app') . '/', '', $filePath);
+        
+        if (!Storage::disk(config('turbo-export.disk'))->exists($relativePath)) {
+            return response()->json(['error' => 'File not found', 'path' => $relativePath], 404);
         }
 
         return Storage::disk(config('turbo-export.disk'))->download(
-            $filePath,
+            $relativePath,
             basename($filePath),
             ['Content-Type' => 'application/octet-stream']
         );

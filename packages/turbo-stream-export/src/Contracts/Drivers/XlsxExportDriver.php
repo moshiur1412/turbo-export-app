@@ -88,7 +88,7 @@ class XlsxExportDriver implements ExportDriverInterface
         }
     }
 
-    public function finalize($handle = null, string $filePath): string
+    public function finalize(string $filePath, $handle = null): string
     {
         $this->tempFile = tempnam(sys_get_temp_dir(), 'turbo_export_');
         $writer = new Xlsx($this->spreadsheet);

@@ -14,11 +14,11 @@ interface ExportDriverInterface
 
     public function getFileExtension(): string;
 
-    public function writeHeader(array $columns, $handle): void;
+    public function writeHeader(array $columns, $handle = null): void;
 
-    public function writeRow(array $data, $handle): void;
+    public function writeRow(array $data, $handle = null): void;
 
-    public function writeBatch(Collection $records, array $columns, $handle): void;
+    public function writeBatch(Collection $records, array $columns, $handle = null): void;
 
-    public function finalize($handle, string $filePath): string;
+    public function finalize(string $filePath, $handle = null): string;
 }

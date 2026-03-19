@@ -8,15 +8,29 @@ use Illuminate\Support\Str;
 
 class LargeDataSeeder extends Seeder
 {
+    private array $designationIds = [];
+    private array $departmentIds = [];
+    private array $salaryIds = [];
+    private string $hashedPassword;
+
     public function run(): void
     {
+        ini_set('memory_limit', '512M');
+        
         $this->command->info('Starting 100M+ data seeding...');
         
         $this->seedDesignations(50);
         $this->seedDepartments(30);
         $this->seedSalaries(100);
-        $this->seedUsers(1000000);
-        $this->seedAttendances(100000000);
+        
+        $this->designationIds = DB::table('designations')->pluck('id')->toArray();
+        $this->departmentIds = DB::table('departments')->pluck('id')->toArray();
+        $this->salaryIds = DB::table('salaries')->pluck('id')->toArray();
+        
+        $this->hashedPassword = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+        
+        $this->seedUsers(100000, 2);
+        $this->seedAttendances(1000000);
         
         $this->command->info('Seeding completed!');
     }
@@ -42,7 +56,7 @@ class LargeDataSeeder extends Seeder
                 'updated_at' => now(),
             ];
             
-            if ($i % 1000 === 0) {
+            if (count($designations) >= 1000) {
                 DB::table('designations')->insert($designations);
                 $designations = [];
             }
@@ -75,7 +89,7 @@ class LargeDataSeeder extends Seeder
                 'updated_at' => now(),
             ];
             
-            if ($i % 1000 === 0) {
+            if (count($departments) >= 1000) {
                 DB::table('departments')->insert($departments);
                 $departments = [];
             }
@@ -96,11 +110,11 @@ class LargeDataSeeder extends Seeder
         
         for ($i = 1; $i <= $count; $i++) {
             $basic = rand(20000, 100000);
-            $houseRent = $basic * 0.2;
+            $houseRent = (int)($basic * 0.2);
             $medical = rand(1000, 5000);
             $transport = rand(1000, 3000);
             $special = rand(2000, 10000);
-            $provident = $basic * 0.05;
+            $provident = (int)($basic * 0.05);
             $tax = rand(500, 5000);
             
             $gross = $basic + $houseRent + $medical + $transport + $special;
@@ -123,7 +137,7 @@ class LargeDataSeeder extends Seeder
                 'updated_at' => now(),
             ];
             
-            if ($i % 1000 === 0) {
+            if (count($salaries) >= 1000) {
                 DB::table('salaries')->insert($salaries);
                 $salaries = [];
             }
@@ -136,22 +150,17 @@ class LargeDataSeeder extends Seeder
         $this->command->info("Salaries seeded: {$count}");
     }
 
-    private function seedUsers(int $count): void
+    private function seedUsers(int $count, int $startNumber = 1): void
     {
-        $this->command->info("Seeding {$count} users (this will take a while)...");
+        $this->command->info("Seeding {$count} users...");
         
-        $designationIds = DB::table('designations')->pluck('id')->toArray();
-        $departmentIds = DB::table('departments')->pluck('id')->toArray();
-        $salaryIds = DB::table('salaries')->pluck('id')->toArray();
-        
-        $batchSize = 10000;
+        $batchSize = 5000;
         $totalBatches = ceil($count / $batchSize);
-        $progressInterval = 1000;
         
         for ($batch = 0; $batch < $totalBatches; $batch++) {
             $users = [];
-            $start = $batch * $batchSize + 1;
-            $end = min(($batch + 1) * $batchSize, $count);
+            $start = ($batch * $batchSize) + $startNumber;
+            $end = min((($batch + 1) * $batchSize) + ($startNumber - 1), $count + ($startNumber - 1));
             
             for ($i = $start; $i <= $end; $i++) {
                 $users[] = [
@@ -159,25 +168,22 @@ class LargeDataSeeder extends Seeder
                     'name' => 'Employee ' . $i,
                     'email' => 'employee' . $i . '@example.com',
                     'email_verified_at' => now(),
-                    'password' => bcrypt('password'),
-                    'designation_id' => $designationIds[array_rand($designationIds)],
-                    'department_id' => $departmentIds[array_rand($departmentIds)],
-                    'salary_id' => $salaryIds[array_rand($salaryIds)],
+                    'password' => $this->hashedPassword,
+                    'designation_id' => $this->designationIds[array_rand($this->designationIds)],
+                    'department_id' => $this->departmentIds[array_rand($this->departmentIds)],
+                    'salary_id' => $this->salaryIds[array_rand($this->salaryIds)],
                     'join_date' => now()->subDays(rand(1, 1825)),
                     'status' => ['active', 'active', 'active', 'inactive', 'on_leave'][rand(0, 4)],
                     'remember_token' => Str::random(10),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
-                
-                if ($i % $progressInterval === 0) {
-                    $this->command->info("Progress: {$i}/{$count} (" . round(($i / $count) * 100) . "%)");
-                }
             }
             
             DB::table('users')->insert($users);
+            $this->command->info("Users: {$end}/" . ($count + $startNumber - 1) . " (" . round((($end - $startNumber + 1) / $count) * 100) . "%)");
             
-            $this->command->info("Users seeded: {$end}/{$count} (" . round(($end / $count) * 100) . "%)");
+            gc_collect_cycles();
         }
         
         $this->command->info("Users seeded: {$count}");
@@ -187,11 +193,8 @@ class LargeDataSeeder extends Seeder
     {
         $this->command->info("Seeding {$count} attendance records...");
         
-        $userIds = DB::table('users')->pluck('id')->toArray();
-        
         $batchSize = 50000;
         $totalBatches = ceil($count / $batchSize);
-        $progressInterval = 5000;
         
         $statuses = ['present', 'present', 'present', 'present', 'absent', 'late', 'leave', 'holiday'];
         
@@ -201,11 +204,12 @@ class LargeDataSeeder extends Seeder
             $end = min(($batch + 1) * $batchSize, $count);
             
             for ($i = $start; $i <= $end; $i++) {
-                $userId = $userIds[array_rand($userIds)];
-                $date = now()->subDays(rand(0, 365))->format('Y-m-d');
+                $userId = ($i % 100000) + 1;
+                $daysAgo = rand(0, 365);
+                $date = now()->subDays($daysAgo)->format('Y-m-d');
                 $status = $statuses[array_rand($statuses)];
                 
-                $checkIn = $status === 'present' || $status === 'late' 
+                $checkIn = in_array($status, ['present', 'late']) 
                     ? sprintf('%02d:%02d:00', rand(8, 10), rand(0, 59)) 
                     : null;
                 $checkOut = $checkIn ? sprintf('%02d:%02d:00', rand(17, 20), rand(0, 59)) : null;
@@ -222,13 +226,10 @@ class LargeDataSeeder extends Seeder
                     'updated_at' => now(),
                 ];
                 
-                if (count($attendances) >= 1000) {
+                if (count($attendances) >= 10000) {
                     DB::table('attendances')->insert($attendances);
                     $attendances = [];
-                    
-                    if ($i % $progressInterval === 0) {
-                        $this->command->info("Progress: {$i}/{$count} (" . round(($i / $count) * 100) . "%)");
-                    }
+                    $this->command->info("Progress: {$i}/{$count} (" . round(($i / $count) * 100) . "%)");
                 }
             }
             
@@ -237,6 +238,7 @@ class LargeDataSeeder extends Seeder
             }
             
             $this->command->info("Batch complete: {$end}/{$count} (" . round(($end / $count) * 100) . "%)");
+            gc_collect_cycles();
         }
         
         $this->command->info("Attendances seeded: {$count}");

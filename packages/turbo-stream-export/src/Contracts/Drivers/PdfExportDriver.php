@@ -113,7 +113,7 @@ class PdfExportDriver implements ExportDriverInterface
         }
     }
 
-    public function finalize($handle = null, string $filePath): string
+    public function finalize(string $filePath, $handle = null): string
     {
         $directory = dirname($filePath);
         if (!file_exists($directory)) {
