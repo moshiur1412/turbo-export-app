@@ -47,7 +47,9 @@ class CsvExportDriver implements ExportDriverInterface
 
     public function finalize($handle, string $filePath): string
     {
-        fclose($handle);
+        if ($handle !== null) {
+            fclose($handle);
+        }
 
         return $filePath;
     }

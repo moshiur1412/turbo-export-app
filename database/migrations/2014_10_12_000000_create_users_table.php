@@ -15,10 +15,17 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->string('employee_id')->unique();
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->foreignId('designation_id')->nullable()->constrained('designations')->nullOnDelete();
+            $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();
+            $table->foreignId('salary_id')->nullable()->constrained('salaries')->nullOnDelete();
+            $table->foreignId('attendance_id')->nullable()->constrained('attendances')->nullOnDelete();
+            $table->date('join_date')->nullable();
+            $table->enum('status', ['active', 'inactive', 'on_leave', 'terminated'])->default('active');
             $table->rememberToken();
             $table->timestamps();
         });

@@ -11,7 +11,10 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "league/csv": "^9.15",
-        "predis/predis": "*"
+        "predis/predis": "*",
+        "phpoffice/phpspreadsheet": "^1.29",
+        "phpoffice/phpword": "^1.1",
+        "tecnickcom/tcpdf": "^6.6"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "composer.json",
+    "composer.lock"
+  ],
+  "pipeline": {
+    "install": {
+      "dependsOn": ["^"],
+      "outputs": ["vendor/**", ".composer/**"]
+    },
+    "test": {
+      "dependsOn": ["install"],
+      "outputs": ["coverage/**", ".phpunit.cache/**"]
+    },
+    "lint": {
+      "dependsOn": ["install"],
+      "outputs": []
+    }
+  },
+  "tasks": {
+    "test#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/tests/**/*.php"],
+      "outputs": ["packages/turbo-stream-export/coverage/**", "packages/turbo-stream-export/.phpunit.cache/**"],
+      "env": ["APP_ENV", "DB_CONNECTION"]
+    },
+    "test:unit#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/tests/Unit/**/*.php"],
+      "outputs": ["packages/turbo-stream-export/coverage/unit/**"],
+      "env": ["APP_ENV"]
+    },
+    "test:feature#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/tests/Feature/**/*.php"],
+      "outputs": ["packages/turbo-stream-export/coverage/feature/**"],
+      "env": ["APP_ENV", "DB_CONNECTION"]
+    },
+    "test:large#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/tests/LargeData/**/*.php"],
+      "outputs": ["packages/turbo-stream-export/coverage/large/**"],
+      "env": ["APP_ENV"],
+      "cache": false
+    },
+    "install#package": {
+      "cache": false,
+      "outputs": ["packages/turbo-stream-export/vendor/**"]
+    },
+    "test#app": {
+      "dependsOn": ["install"],
+      "inputs": ["tests/**/*.php"],
+      "outputs": ["coverage/**", ".phpunit.cache/**"]
+    },
+    "lint#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/src/**/*.php"],
+      "outputs": []
+    },
+    "lint:fix#package": {
+      "dependsOn": ["@turbostream/export-engine#install"],
+      "inputs": ["packages/turbo-stream-export/src/**/*.php"],
+      "outputs": []
+    }
+  }
+}
