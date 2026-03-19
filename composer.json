@@ -10,8 +10,8 @@
         "laravel/framework": "^11.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
-        "predis/predis": "^2.2",
-        "league/csv": "^9.15"
+        "league/csv": "^9.15",
+        "predis/predis": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -28,11 +28,9 @@
         "psr-4": {
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
-            "Database\\Seeders\\": "database/seeders/"
-        },
-        "classmap": [
-            "packages/turbo-stream-export/src/"
-        ]
+            "Database\\Seeders\\": "database/seeders/",
+            "TurboStreamExport\\": "packages/turbo-stream-export/src/"
+        }
     },
     "autoload-dev": {
         "psr-4": {

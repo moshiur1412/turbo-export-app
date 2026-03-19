@@ -1,141 +1,25 @@
-# Turbo-Stream Export Engine
+# TurboStream Export
 
-A high-performance Laravel 11 package for exporting large datasets (CSV/Excel) using chunked queries with async processing via Redis queues.
+High-performance Laravel package for exporting large datasets (100k+ records) using chunked queries and async processing via Redis queues.
 
-## Features
+## Requirements
 
-- **Memory Efficient**: Uses chunked queries to process 100k+ records under 50MB memory
-- **Async Processing**: Laravel Queues with Redis for background processing
-- **Real-time Progress**: Live progress tracking via Redis with polling
-- **Secure Downloads**: Signed URLs for secure file downloads
-- **Modern Testing**: Pest PHP unit and integration tests
-- **PSR-12 Compliant**: Strict typing and PSR coding standards
-
-## Tech Stack
-
-- Laravel 11
 - PHP 8.3+
-- React (Inertia.js)
-- MySQL
-- Redis
-- Pest Testing
-- Tailwind CSS
-
-## Folder Structure
-
-```
-turbo-export-app/
-├── app/                          # Laravel application
-│   ├── Console/
-│   ├── Exceptions/
-│   ├── Http/
-│   │   └── Controllers/
-│   ├── Models/
-│   └── Providers/
-├── bootstrap/
-│   └── app.php                   # Laravel 11 bootstrap
-├── config/
-│   ├── app.php
-│   ├── database.php
-│   ├── queue.php
-│   └── turbo-export.php          # Package config
-├── packages/
-│   └── turbo-stream-export/      # Main package
-│       ├── src/
-│       │   ├── Contracts/
-│       │   │   └── ExportableInterface.php
-│       │   ├── Http/
-│       │   │   └── Controllers/
-│       │   │       └── ExportController.php
-│       │   ├── Jobs/
-│       │   │   └── ProcessExportJob.php
-│       │   ├── Providers/
-│       │   │   └── TurboStreamExportServiceProvider.php
-│       │   └── Services/
-│       │       └── ExportService.php
-│       ├── config/
-│       │   └── turbo-export.php
-│       ├── routes/
-│       │   └── api.php
-│       └── composer.json
-├── resources/
-│   └── js/
-│       └── components/
-│           └── ExportProgress.jsx   # React progress component
-├── routes/
-│   ├── api.php
-│   ├── console.php
-│   └── web.php
-├── storage/
-│   └── app/
-│       └── exports/              # Exported files
-├── tests/
-│   ├── Feature/
-│   │   └── ExportApiTest.php
-│   └── Unit/
-│       └── ExportServiceTest.php
-├── composer.json
-├── package.json
-├── phpunit.xml
-└── vite.config.js
-```
-
-## ERD (Entity Relationship)
-
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│    Export       │────<│   ExportJob     │────<│  ExportService  │
-│   (Controller)  │     │  (Queue Job)     │     │  (Core Logic)   │
-└────────┬────────┘     └────────┬─────────┘     └────────┬────────┘
-         │                      │                        │
-         │                      │                        │
-         v                      v                        v
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   User Model    │     │    Redis         │     │  Storage Disk   │
-│   (Auth)        │     │  (Progress)      │     │  (CSV/Excel)    │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-```
+- Laravel 11
+- Redis (or database queue fallback)
+- MySQL 8.0+
 
 ## Installation
 
-### 1. Prerequisites
-
-- PHP 8.3+
-- Composer
-- MySQL 8.0+
-- Redis
-- Node.js 18+
-
-### 2. Clone & Install
-
 ```bash
-# Clone repository
-git clone <repository-url> turbo-export-app
-cd turbo-export-app
-
-# Install PHP dependencies
 composer install
-
-# Install Node.js dependencies
-npm install
-
-# Build assets
-npm run build
-
-# Copy environment file
 cp .env.example .env
-
-# Generate application key
 php artisan key:generate
 ```
 
-### 3. Configure Environment (.env)
+### Configure Environment
 
 ```env
-APP_NAME="Turbo Export"
-APP_URL=http://localhost:8000
-
-# Database
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
@@ -143,171 +27,180 @@ DB_DATABASE=turbo_export
 DB_USERNAME=root
 DB_PASSWORD=
 
-# Redis
-REDIS_CLIENT=predis
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=null
-REDIS_PORT=6379
-
-# Queue
+CACHE_DRIVER=redis
 QUEUE_CONNECTION=redis
 
-# Export Settings
-EXPORT_DISK=local
-EXPORT_CHUNK_SIZE=1000
-EXPORT_QUEUE=exports
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
 ```
 
-### 4. Run Migrations
+### Setup Database
 
 ```bash
 php artisan migrate
+php artisan db:seed --class=UserSeeder
 ```
 
-### 5. Start Services
+### Start Queue Worker
 
 ```bash
-# Start queue worker (separate terminal)
 php artisan queue:work redis --queue=exports
-
-# Start development server
-php artisan serve
 ```
 
-## API Usage
+## API Authentication
+
+```bash
+curl -X POST http://localhost:8000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"password"}'
+```
+
+Response:
+```json
+{
+    "token": "2|abc123...",
+    "user": {"id": 1, "name": "Admin", "email": "admin@example.com"}
+}
+```
+
+## API Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/login` | No | Get authentication token |
+| POST | `/api/logout` | Yes | Revoke current token |
+| POST | `/api/exports` | Yes | Create new export job |
+| GET | `/api/exports/{id}/progress` | Yes | Check export status |
+| GET | `/api/exports/{id}/download` | Yes | Download exported file |
+
+## Usage
 
 ### Create Export
 
 ```bash
-POST /api/exports
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "model": "App\\Models\\User",
-  "columns": ["id", "name", "email", "created_at"],
-  "filters": {"status": "active"},
-  "format": "csv",
-  "filename": "users_export"
-}
+curl -X POST http://localhost:8000/api/exports \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "App\\Models\\User",
+    "columns": ["id", "name", "email", "created_at"],
+    "format": "csv",
+    "filename": "users_export"
+  }'
 ```
 
-**Response:**
+Response (202):
 ```json
 {
-  "export_id": "uuid-string",
-  "status": "queued",
-  "message": "Export job has been queued"
+    "export_id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "queued",
+    "message": "Export job has been queued"
 }
 ```
 
-### Get Progress
+### Check Progress
 
 ```bash
-GET /api/exports/{exportId}/progress
+curl -X GET http://localhost:8000/api/exports/550e8400-e29b-41d4-a716-446655440000/progress \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-**Response:**
+Response:
 ```json
 {
-  "progress": 45,
-  "total": 10000,
-  "status": "processing",
-  "updated_at": "2026-03-18T12:00:00+00:00"
+    "progress": 100,
+    "total": 10000,
+    "status": "completed",
+    "file_path": "exports/users_export.csv"
 }
 ```
 
 ### Download File
 
 ```bash
-GET /api/exports/{exportId}/download?signed_url=true
+curl -X GET http://localhost:8000/api/exports/550e8400-e29b-41d4-a716-446655440000/download \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -o export.csv
 ```
 
-## React Component Usage
+### With Filters
 
-```jsx
-import ExportProgress from './components/ExportProgress';
+```bash
+curl -X POST http://localhost:8000/api/exports \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "App\\Models\\User",
+    "columns": ["id", "name", "email"],
+    "filters": [["status", "=", "active"]],
+    "format": "csv"
+  }'
+```
 
-function App() {
-  const handleComplete = (downloadUrl) => {
-    console.log('Download ready:', downloadUrl);
-  };
+## Request Parameters
 
-  const handleError = (error) => {
-    console.error('Export failed:', error);
-  };
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| model | string | Yes | Full model class path |
+| columns | array | Yes | Columns to export |
+| format | string | No | `csv` (default) or `xlsx` |
+| filename | string | No | Custom filename (without extension) |
+| filters | array | No | Query where clauses |
 
-  return (
-    <ExportProgress
-      exportId="uuid-string"
-      onComplete={handleComplete}
-      onError={handleError}
-      pollingInterval={1000}
-    />
-  );
-}
+## Architecture
+
+```
+Client → ExportController → ProcessExportJob (Queue) → ExportService
+                                                        ↓
+                              ┌─────────────────────────┴─────────────────────────┐
+                              ↓                                                   ↓
+                         Storage Disk                                     Progress Cache (Redis)
+                      (exports/*.csv)                                           
 ```
 
 ## Configuration
 
-### Package Config (config/turbo-export.php)
+Publish config:
+```bash
+php artisan vendor:publish --tag=turbo-export-config
+```
 
+Config (`config/turbo-export.php`):
 ```php
-return [
-    'disk' => env('EXPORT_DISK', 'local'),
-    'chunk_size' => env('EXPORT_CHUNK_SIZE', 1000),
-    'queue' => env('EXPORT_QUEUE', 'exports'),
-    'retention_hours' => env('EXPORT_RETENTION_HOURS', 24),
-    'max_records' => env('EXPORT_MAX_RECORDS', 1000000),
-    'formats' => ['csv', 'xlsx'],
-    'default_format' => env('EXPORT_DEFAULT_FORMAT', 'csv'),
-];
+[
+    'disk' => 'local',
+    'chunk_size' => 1000,
+    'queue' => 'exports',
+    'retention_hours' => 24,
+    'max_records' => 1000000,
+]
+```
+
+Environment variables:
+```env
+EXPORT_DISK=local
+EXPORT_CHUNK_SIZE=1000
+EXPORT_QUEUE=exports
+EXPORT_RETENTION_HOURS=24
+EXPORT_MAX_RECORDS=1000000
 ```
 
 ## Testing
 
-### Run Tests
-
 ```bash
-# Run all tests
 ./vendor/bin/pest
-
-# Run unit tests
-./vendor/bin/pest tests/Unit
-
-# Run integration tests
-./vendor/bin/pest tests/Feature
 ```
 
-### Test Cases
+## Authorization
 
-1. **ExportService Unit Tests**
-   - Progress storage/retrieval from Redis
-   - Chunk size calculation
-   - File path generation
+Define gates in `app/Providers/AuthServiceProvider.php`:
 
-2. **ProcessExportJob Tests**
-   - Job instantiation with parameters
-   - Queue configuration
-   - Job tags
+```php
+Gate::define('export', function ($user, $model) {
+    return true;
+});
 
-3. **API Integration Tests**
-   - Export creation endpoint
-   - Progress checking endpoint
-   - Authorization checks
-
-## Security
-
-- **Signed URLs**: Download endpoints require valid signed URLs
-- **Authorization Gates**: Export access controlled via Laravel gates
-- **CSRF Protection**: Enabled for web routes
-
-## Performance
-
-- **Memory**: < 50MB for 100k records (chunked processing)
-- **Chunk Size**: Configurable (default 1000)
-- **Queue**: Dedicated Redis queue for exports
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Gate::define('download-export', function ($user, $filePath) {
+    return true;
+});
+```

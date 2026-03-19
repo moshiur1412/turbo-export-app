@@ -9,7 +9,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Database\Eloquent\Builder;
 use TurboStreamExport\Services\ExportService;
 
 class ProcessExportJob implements ShouldQueue
@@ -21,8 +20,9 @@ class ProcessExportJob implements ShouldQueue
 
     public function __construct(
         public readonly string $exportId,
-        public readonly Builder $query,
+        public readonly string $modelClass,
         public readonly array $columns,
+        public readonly array $filters,
         public readonly string $filename,
         public readonly string $format = 'csv',
         public readonly int $userId
@@ -32,9 +32,15 @@ class ProcessExportJob implements ShouldQueue
 
     public function handle(ExportService $exportService): void
     {
+        $query = $this->modelClass::query();
+
+        if (!empty($this->filters)) {
+            $query->where($this->filters);
+        }
+
         $exportService->processExport(
             $this->exportId,
-            $this->query,
+            $query,
             $this->columns,
             $this->filename,
             $this->format

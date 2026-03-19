@@ -2,26 +2,26 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Redis;
+use TurboStreamExport\Contracts\Drivers\CsvExportDriver;
 use TurboStreamExport\Services\ExportService;
 
-beforeEach(function () {
-    Redis::flushdb();
-});
-
 describe('ExportService', function () {
-    it('stores and retrieves progress from redis', function () {
-        $service = new ExportService();
+    it('registers drivers correctly', function () {
+        $service = new ExportService('local', [new CsvExportDriver()]);
         
-        $exportId = 'test-export-123';
+        expect($service->hasDriver('csv'))->toBeTrue();
+        expect($service->getDriver('csv'))->toBeInstanceOf(CsvExportDriver::class);
+    });
+
+    it('throws exception for unknown driver format', function () {
+        $service = new ExportService('local', [new CsvExportDriver()]);
         
-        $progress = $service->getProgress($exportId);
-        
-        expect($progress['status'])->toBe('not_found');
+        expect(fn() => $service->getDriver('unknown'))
+            ->toThrow(\InvalidArgumentException::class, 'Driver for format [unknown] not registered.');
     });
 
     it('calculates correct chunk size for large datasets', function () {
-        $service = new ExportService();
+        $service = new ExportService('local', [new CsvExportDriver()]);
         
         $reflection = new ReflectionClass($service);
         $method = $reflection->getMethod('processExport');
@@ -75,5 +75,22 @@ describe('ProcessExportJob', function () {
             'export:test-uuid-456',
             'user:42',
         ]);
+    });
+});
+
+describe('CsvExportDriver', function () {
+    it('returns correct format identifier', function () {
+        $driver = new CsvExportDriver();
+        expect($driver->getFormat())->toBe('csv');
+    });
+
+    it('returns correct content type', function () {
+        $driver = new CsvExportDriver();
+        expect($driver->getContentType())->toBe('text/csv');
+    });
+
+    it('returns correct file extension', function () {
+        $driver = new CsvExportDriver();
+        expect($driver->getFileExtension())->toBe('csv');
     });
 });

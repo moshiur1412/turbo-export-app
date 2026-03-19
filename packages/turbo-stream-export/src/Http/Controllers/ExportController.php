@@ -47,8 +47,9 @@ class ExportController extends Controller
 
         ProcessExportJob::dispatch(
             $exportId,
-            $query,
+            $modelClass,
             $validated['columns'],
+            $validated['filters'] ?? [],
             $filename,
             $format,
             $request->user()?->id ?? 0
@@ -72,7 +73,7 @@ class ExportController extends Controller
         return response()->json($progress);
     }
 
-    public function download(string $exportId, Request $request): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function download(string $exportId, Request $request): \Symfony\Component\HttpFoundation\StreamedResponse|JsonResponse
     {
         $progress = $this->exportService->getProgress($exportId);
 
@@ -82,12 +83,6 @@ class ExportController extends Controller
 
         if (!Gate::allows('download-export', $progress['file_path'])) {
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $signedUrl = $request->get('signed_url', false);
-        
-        if ($signedUrl && !$request->hasValidSignature()) {
-            return response()->json(['error' => 'Invalid signature'], 403);
         }
 
         $filePath = $progress['file_path'];
