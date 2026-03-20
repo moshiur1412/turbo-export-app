@@ -162,43 +162,40 @@ php artisan db:seed --class=LeaveBalanceSeeder
 - Email: `admin@example.com`
 - Password: `password`
 
-### 7. Large Scale Data Seeding (100M+ Records)
+### 7. Large Scale Data Seeding
 
-For stress testing the export system with massive datasets:
+For testing the export system with large datasets:
 
 ```bash
+# Option 1: Small dataset (10M+ records) - for initial testing
+php artisan db:seed --class=LargeDataSeeder
+
+# Option 2: Large dataset (100M+ records) - for stress testing
 php artisan db:seed --class=LargeScaleDataSeeder
-```
 
-Or use the artisan command for more control:
-
-```bash
-# Full dataset: 100K employees, 60 months attendance
-php artisan generate:large-data
-
-# Custom configuration
+# Option 3: Artisan command with custom configuration
 php artisan generate:large-data --employees=50000 --months=24 --chunk=5000
 ```
 
 **Data Generated:**
-| Data Type | Count | Description |
-|-----------|-------|-------------|
-| Departments | 100 | Software, DB, Network, HR, Finance, etc. |
-| Designations | 120 | Junior to VP level across all roles |
-| Employees | 100,000 | With salaries and department assignments |
-| Attendance | 124,800,000 | 60 months × 26 days × 100K employees |
-| Leaves | 1,000,000 | 10 leaves per employee |
-| Leave Balances | 6,000,000 | 5 years × 12 months × 100K employees |
 
-**Total Records: ~132M (~50GB database)**
+| Data Type | LargeDataSeeder (10M+) | LargeScaleDataSeeder (100M+) |
+|-----------|----------------------|------------------------------|
+| Departments | 100 | 100 |
+| Designations | 120 | 120 |
+| Employees | 10,000 | 100,000 |
+| Attendance | 1,560,000 (6 months) | 124,800,000 (60 months) |
+| Leaves | 100,000 | 1,000,000 |
+| Leave Balances | 120,000 (1 year) | 6,000,000 (5 years) |
+| **Total** | **~1.8M (~1GB)** | **~132M (~50GB)** |
 
 **Important:**
-- Ensure sufficient database disk space (~50GB for full dataset)
-- Disable foreign key checks for faster inserts:
+- Ensure sufficient database disk space
+- For large seeding, disable foreign key checks:
   ```sql
   SET FOREIGN_KEY_CHECKS = 0;
   ```
-- Run during off-peak hours (may take several hours)
+- Run during off-peak hours (may take several hours for 100M+)
 - Monitor MySQL `max_allowed_packet` setting
 
 ---
@@ -733,7 +730,8 @@ turbo-export-app/
     ├── migrations/
     └── seeders/
         ├── UserSeeder.php
-        ├── LargeScaleDataSeeder.php
+        ├── LargeDataSeeder.php          # 10M+ data (for initial testing)
+        ├── LargeScaleDataSeeder.php     # 100M+ data (for stress testing)
         ├── OptimizedAttendanceSeeder.php
         ├── LeaveSeeder.php
         └── LeaveBalanceSeeder.php
@@ -809,6 +807,13 @@ SET UNIQUE_CHECKS = 0;
 SET autocommit = 0;
 ```
 Remember to re-enable after seeding.
+
+### Large Seeding: "Duplicate entry for key designations_code_unique"
+Both seeders use the same hardcoded designations. Truncate tables before running a different seeder:
+```bash
+php artisan tinker --execute="DB::table('departments')->truncate(); DB::table('designations')->truncate();"
+php artisan db:seed --class=LargeScaleDataSeeder
+```
 
 ## License
 

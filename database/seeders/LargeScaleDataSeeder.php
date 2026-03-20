@@ -157,7 +157,7 @@ class LargeScaleDataSeeder extends Seeder
         ['name' => 'Security Analyst', 'code' => 'SA2', 'min_salary' => 55000, 'max_salary' => 95000],
         ['name' => 'Senior Security Analyst', 'code' => 'SSA2', 'min_salary' => 90000, 'max_salary' => 140000],
         ['name' => 'Security Engineer', 'code' => 'SE2', 'min_salary' => 70000, 'max_salary' => 120000],
-        ['name' => 'Senior Security Engineer', 'code' => 'SSE2', 'min_salary' => 115000, 'max_salary' => 170000],
+        ['name' => 'Senior Security Engineer', 'code' => 'SSE3', 'min_salary' => 115000, 'max_salary' => 170000],
         ['name' => 'Security Architect', 'code' => 'SCA', 'min_salary' => 140000, 'max_salary' => 220000],
         ['name' => 'Penetration Tester', 'code' => 'PT', 'min_salary' => 70000, 'max_salary' => 130000],
         ['name' => 'Senior Penetration Tester', 'code' => 'SPT', 'min_salary' => 125000, 'max_salary' => 180000],
@@ -244,7 +244,7 @@ class LargeScaleDataSeeder extends Seeder
         ['name' => 'Systems Administrator', 'code' => 'SYSA', 'min_salary' => 50000, 'max_salary' => 85000],
         ['name' => 'Senior Systems Administrator', 'code' => 'SSYSA', 'min_salary' => 80000, 'max_salary' => 130000],
         ['name' => 'Systems Engineer', 'code' => 'SE3', 'min_salary' => 55000, 'max_salary' => 95000],
-        ['name' => 'Senior Systems Engineer', 'code' => 'SSE3', 'min_salary' => 90000, 'max_salary' => 145000],
+        ['name' => 'Senior Systems Engineer', 'code' => 'SSE4', 'min_salary' => 90000, 'max_salary' => 145000],
         ['name' => 'Infrastructure Engineer', 'code' => 'IE', 'min_salary' => 70000, 'max_salary' => 120000],
         ['name' => 'Senior Infrastructure Engineer', 'code' => 'SIE', 'min_salary' => 115000, 'max_salary' => 180000],
     ];
