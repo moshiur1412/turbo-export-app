@@ -10,6 +10,8 @@ This application provides a **scalable data export system** that allows authenti
 - Export user lists, transaction reports, or any model data
 - Generate downloadable reports in CSV/Excel format
 - Process large datasets in the background without blocking the user
+- Salary reports with automated deductions (late attendance, unpaid leave)
+- Custom dynamic reports with joins and filters
 
 ## Features
 
@@ -19,6 +21,8 @@ This application provides a **scalable data export system** that allows authenti
 - **Secure Downloads**: Signed URLs for secure file downloads
 - **Modern Testing**: Pest PHP unit and integration tests
 - **PSR-12 Compliant**: Strict typing and PSR coding standards
+- **Salary Reports**: Automated salary deduction reports (late days, leave cuts)
+- **Dynamic Reports**: Build custom queries with joins, filters, and aggregations
 
 ## Tech Stack
 
@@ -150,11 +154,52 @@ CREATE DATABASE turbo_export CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```bash
 php artisan migrate
 php artisan db:seed --class=UserSeeder
+php artisan db:seed --class=LeaveSeeder
+php artisan db:seed --class=LeaveBalanceSeeder
 ```
 
 **Default login credentials:**
 - Email: `admin@example.com`
 - Password: `password`
+
+### 7. Large Scale Data Seeding (100M+ Records)
+
+For stress testing the export system with massive datasets:
+
+```bash
+php artisan db:seed --class=LargeScaleDataSeeder
+```
+
+Or use the artisan command for more control:
+
+```bash
+# Full dataset: 100K employees, 60 months attendance
+php artisan generate:large-data
+
+# Custom configuration
+php artisan generate:large-data --employees=50000 --months=24 --chunk=5000
+```
+
+**Data Generated:**
+| Data Type | Count | Description |
+|-----------|-------|-------------|
+| Departments | 100 | Software, DB, Network, HR, Finance, etc. |
+| Designations | 120 | Junior to VP level across all roles |
+| Employees | 100,000 | With salaries and department assignments |
+| Attendance | 124,800,000 | 60 months × 26 days × 100K employees |
+| Leaves | 1,000,000 | 10 leaves per employee |
+| Leave Balances | 6,000,000 | 5 years × 12 months × 100K employees |
+
+**Total Records: ~132M (~50GB database)**
+
+**Important:**
+- Ensure sufficient database disk space (~50GB for full dataset)
+- Disable foreign key checks for faster inserts:
+  ```sql
+  SET FOREIGN_KEY_CHECKS = 0;
+  ```
+- Run during off-peak hours (may take several hours)
+- Monitor MySQL `max_allowed_packet` setting
 
 ---
 
@@ -285,13 +330,35 @@ curl -X POST http://localhost:8000/api/exports \
 
 ## API Endpoints Reference
 
+### Authentication
+
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/api/login` | No | Get authentication token |
 | POST | `/api/logout` | Yes | Revoke current token |
+
+### Data Export
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
 | POST | `/api/exports` | Yes | Create new export job |
 | GET | `/api/exports/{id}/progress` | No | Check export status |
 | GET | `/api/exports/{id}/download` | No | Download exported file |
+
+### Salary Reports
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/reports/salary` | Yes | Generate salary report with deductions |
+| POST | `/api/reports/salary/export` | Yes | Export salary report to file |
+
+### Dynamic Reports
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/reports/dynamic` | Yes | Create dynamic query reports |
+
+---
 
 ## Request Parameters
 
@@ -304,6 +371,89 @@ curl -X POST http://localhost:8000/api/exports \
 | format | string | No | `csv` (default) |
 | filename | string | No | Custom filename (without extension) |
 | filters | array | No | Query where clauses |
+
+### POST /api/reports/salary
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| start_date | date | Yes | Report period start |
+| end_date | date | Yes | Report period end |
+| department_ids | array | No | Filter by departments |
+| user_ids | array | No | Filter by specific users |
+| format | string | No | `csv`, `xlsx`, `pdf`, `docx` |
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/reports/salary \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "2024-03-01",
+    "end_date": "2024-03-31",
+    "department_ids": [1, 2],
+    "format": "csv"
+  }'
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "employee_id": "EMP001",
+            "employee_name": "John Doe",
+            "department": "Engineering",
+            "designation": "Developer",
+            "basic_salary": 50000,
+            "late_days": 5,
+            "late_deduction_days": 1,
+            "leave_without_balance": 2,
+            "leave_deduction_amount": 3333.33,
+            "total_deduction_days": 3,
+            "total_deduction_amount": 5000,
+            "final_salary": 45000
+        }
+    ],
+    "meta": {
+        "period": "Mar 2024",
+        "total_employees": 50,
+        "total_late_days": 120,
+        "total_deductions": 25000
+    }
+}
+```
+
+### POST /api/reports/dynamic
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| model | string | Yes | Model name (e.g., `User`, `Attendance`) |
+| columns | array | Yes | Columns to select |
+| joins | array | No | Table joins |
+| filters | array | No | Query filters |
+| aggregations | array | No | Aggregate functions |
+| start_date | date | No | Date range start |
+| end_date | date | No | Date range end |
+| date_column | string | No | Date column for filtering |
+| format | string | No | `csv`, `xlsx`, `pdf`, `docx`, `sql` |
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/reports/dynamic \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "User",
+    "columns": ["name", "email", "status"],
+    "filters": [
+      {"column": "status", "value": "active", "operator": "="}
+    ],
+    "joins": [
+      {"table": "departments", "first": "users.department_id", "second": "departments.id"}
+    ]
+  }'
+```
 
 ---
 
@@ -453,23 +603,27 @@ EXPORT_CHUNK_SIZE=1000       # Records per chunk
 │ updated_at                                                                     │
 └─────────────────────────────────────────────────┬───────────────────────────────┘
                                                   │
-                                                  │ 1:N
-                                                  ▼
-                                    ┌──────────────────────┐
-                                    │    attendances       │
-                                    ├──────────────────────┤
-                                    │ id (PK)              │
-                                    │ user_id (FK) ──► users│
-                                    │ attendance_date      │
-                                    │ check_in             │
-                                    │ check_out            │
-                                    │ worked_hours         │
-                                    │ status (enum)        │
-                                    │ notes                │
-                                    │ created_at           │
-                                    │ updated_at           │
-                                    └──────────────────────┘
-                                    UNIQUE(user_id, attendance_date)
+                    ┌─────────────────────────────┼─────────────────────────────┐
+                    │ 1:N                         │ 1:N                         │ 1:N
+                    ▼                             ▼                             ▼
+┌──────────────────────┐    ┌──────────────────────┐    ┌──────────────────────────┐
+│    attendances       │    │       leaves         │    │    leave_balances        │
+├──────────────────────┤    ├──────────────────────┤    ├──────────────────────────┤
+│ id (PK)              │    │ id (PK)              │    │ id (PK)                  │
+│ user_id (FK) ──► users│   │ user_id (FK) ──► users│   │ user_id (FK) ──► users   │
+│ attendance_date      │    │ leave_type           │    │ year                     │
+│ check_in             │    │ start_date           │    │ month                    │
+│ check_out            │    │ end_date             │    │ casual_leave             │
+│ worked_hours         │    │ days                 │    │ sick_leave               │
+│ status (enum)        │    │ reason               │    │ annual_leave             │
+│ notes                │    │ status               │    │ used_casual              │
+│ created_at           │    │ is_paid              │    │ used_sick                │
+│ updated_at           │    │ approved_by (FK)     │    │ used_annual              │
+└──────────────────────┘    │ approved_at          │    │ created_at               │
+     UNIQUE(user_id,date)   │ created_at           │    │ updated_at               │
+                             │ updated_at           │    └──────────────────────────┘
+                             └──────────────────────┘         UNIQUE(user,year,month)
+                             INDEX(user_id, start_date, end_date)
 
 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -480,6 +634,8 @@ EXPORT_CHUNK_SIZE=1000       # Records per chunk
   departments   (1) ────── (N)  users
   salaries      (1) ────── (N)  users
   users         (1) ────── (N)  attendances
+  users         (1) ────── (N)  leaves
+  users         (1) ────── (N)  leave_balances
 
 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -491,6 +647,43 @@ EXPORT_CHUNK_SIZE=1000       # Records per chunk
   • departments     - Organizational units (e.g., IT, HR, Finance)
   • salaries        - Salary components (basic, house rent, allowances, deductions)
   • attendances     - Daily attendance tracking per employee per date
+  • leaves          - Leave requests (approved/rejected/pending)
+  • leave_balances  - Monthly leave balance per employee
+```
+
+---
+
+## Salary Deduction Rules
+
+The salary report automatically calculates deductions based on:
+
+### Late Attendance
+- **Rule**: Every **3 late days** = **1 day salary cut**
+- **Calculation**: `late_days / 3 = deduction_days`
+
+### Unpaid Leave
+- **Rule**: If employee takes unpaid leave and has no leave balance
+- **Calculation**: `(unpaid_leave_days - available_balance) * daily_rate`
+
+### Daily Rate Formula
+```
+daily_rate = basic_salary / 30
+```
+
+### Example
+```
+Employee: John Doe
+Basic Salary: 30,000
+Late Days: 5 (results in 1 day deduction)
+Unpaid Leave: 3 days, Available Balance: 1 day
+
+Deductions:
+- Late: 5/3 = 1.67 ≈ 1 day cut
+- Leave: (3-1) = 2 days unpaid
+- Total Days: 3 days
+- Daily Rate: 30,000/30 = 1,000
+- Total Deduction: 3,000
+- Final Salary: 27,000
 ```
 
 ---
@@ -501,9 +694,19 @@ EXPORT_CHUNK_SIZE=1000       # Records per chunk
 turbo-export-app/
 ├── app/
 │   ├── Http/Controllers/
-│   │   └── AuthController.php
-│   └── Providers/
-│       └── AuthServiceProvider.php
+│   │   ├── AuthController.php
+│   │   └── SalaryReportController.php
+│   ├── Models/
+│   │   ├── User.php
+│   │   ├── Attendance.php
+│   │   ├── Salary.php
+│   │   ├── Department.php
+│   │   ├── Designation.php
+│   │   ├── Leave.php
+│   │   └── LeaveBalance.php
+│   └── Services/
+│       ├── SalaryReportService.php
+│       └── ReportBuilder.php
 ├── packages/turbo-stream-export/
 │   └── src/
 │       ├── Http/Controllers/
@@ -515,7 +718,10 @@ turbo-export-app/
 │       │   └── Contracts/
 │       │       ├── ExportDriverInterface.php
 │       │       └── Drivers/
-│       │           └── CsvExportDriver.php
+│       │           ├── CsvExportDriver.php
+│       │           ├── XlsxExportDriver.php
+│       │           ├── PdfExportDriver.php
+│       │           └── DocxExportDriver.php
 │       ├── Providers/
 │       │   └── TurboStreamExportServiceProvider.php
 │       └── config/
@@ -526,7 +732,11 @@ turbo-export-app/
 └── database/
     ├── migrations/
     └── seeders/
-        └── UserSeeder.php
+        ├── UserSeeder.php
+        ├── LargeScaleDataSeeder.php
+        ├── OptimizedAttendanceSeeder.php
+        ├── LeaveSeeder.php
+        └── LeaveBalanceSeeder.php
 ```
 
 ## Testing
@@ -568,6 +778,37 @@ php artisan queue:work redis --queue=exports
 
 ### Export stuck in "processing"
 Check Laravel logs: `storage/logs/laravel.log`
+
+### Large Seeding: "MySQL server has gone away"
+Increase `max_allowed_packet` in MySQL:
+```ini
+max_allowed_packet=256M
+```
+Or in MySQL console:
+```sql
+SET GLOBAL max_allowed_packet=268435456;
+```
+
+### Large Seeding: Out of memory
+Reduce chunk size in seeder:
+```php
+$this->chunkSize = 1000; // Reduce from 10000
+```
+
+### Large Seeding: Slow performance
+1. Disable foreign key checks temporarily:
+```sql
+SET FOREIGN_KEY_CHECKS = 0;
+```
+2. Disable unique checks:
+```sql
+SET UNIQUE_CHECKS = 0;
+```
+3. Disable autocommit:
+```sql
+SET autocommit = 0;
+```
+Remember to re-enable after seeding.
 
 ## License
 

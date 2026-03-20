@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace TurboStreamExport\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use TurboStreamExport\Jobs\ProcessExportJob;
 use TurboStreamExport\Services\ExportService;
 
-class ExportController extends Controller
+class ExportController extends BaseController
 {
     public function __construct(
         private readonly ExportService $exportService
