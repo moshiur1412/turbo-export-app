@@ -76,26 +76,16 @@ class SalaryReportController extends Controller
             $userIds
         );
 
-        $reportBuilder = app(ReportBuilder::class)
-            ->select([
-                'employee_id',
-                'employee_name',
-                'department',
-                'designation',
-                'basic_salary',
-                'late_days',
-                'late_deduction_days',
-                'leave_without_balance',
-                'leave_deduction_amount',
-                'total_deduction_days',
-                'total_deduction_amount',
-                'final_salary',
-            ]);
-
         return response()->json([
             'success' => true,
             'message' => 'Export job created',
-            'data' => $reportBuilder->toExportFormat(),
+            'data' => $reportData->toArray(),
+            'meta' => [
+                'period' => $startDate->format('M Y'),
+                'total_employees' => $reportData->count(),
+                'total_late_days' => $reportData->sum('late_days'),
+                'total_deductions' => $reportData->sum('total_deduction_amount'),
+            ],
         ]);
     }
 

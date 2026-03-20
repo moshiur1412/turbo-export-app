@@ -153,50 +153,101 @@ CREATE DATABASE turbo_export CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ```bash
 php artisan migrate
-php artisan db:seed --class=UserSeeder
-php artisan db:seed --class=LeaveSeeder
-php artisan db:seed --class=LeaveBalanceSeeder
+php artisan db:seed
 ```
 
-**Default login credentials:**
-- Email: `admin@example.com`
-- Password: `password`
+**Default login credentials (after seeding):**
+- Admin: `admin@example.com` / `password`
+- Employees: `employee1@example.com` to `employee1000@example.com` / `password`
+
+**Quick Setup:**
+```bash
+php artisan db:fresh-seed --scale=small --seed --force
+```
 
 ### 7. Large Scale Data Seeding
 
-For testing the export system with large datasets:
+Generate test data for stress testing the export system with large datasets.
+
+**Unified Commands:**
 
 ```bash
-# Option 1: Small dataset (10M+ records) - for initial testing
-php artisan db:seed --class=LargeDataSeeder
+# Fresh database + seed in one command (recommended)
+php artisan db:fresh-seed --scale=medium --seed --force
 
-# Option 2: Large dataset (100M+ records) - for stress testing
-php artisan db:seed --class=LargeScaleDataSeeder
-
-# Option 3: Artisan command with custom configuration
-php artisan generate:large-data --employees=50000 --months=24 --chunk=5000
+# Just seed data without refreshing (if database already exists)
+php artisan seed:large --scale=medium
 ```
 
-**Data Generated:**
+**Available Scales:**
 
-| Data Type | LargeDataSeeder (10M+) | LargeScaleDataSeeder (100M+) |
-|-----------|----------------------|------------------------------|
-| Departments | 100 | 100 |
-| Designations | 120 | 120 |
-| Employees | 10,000 | 100,000 |
-| Attendance | 1,560,000 (6 months) | 124,800,000 (60 months) |
-| Leaves | 100,000 | 1,000,000 |
-| Leave Balances | 120,000 (1 year) | 6,000,000 (5 years) |
-| **Total** | **~1.8M (~1GB)** | **~132M (~50GB)** |
+| Scale | Employees | Attendance | Est. Records | Est. Time | Use Case |
+|-------|-----------|------------|--------------|-----------|----------|
+| `small` | 1,000 | 3 months | ~75K | ~5s | Quick testing |
+| `medium` | 10,000 | 6 months | ~1.3M | ~40s | Standard testing |
+| `large` | 50,000 | 24 months | ~31M | ~15-30min | Stress testing |
+| `xlarge` | 100,000 | 60 months | ~156M | ~1-2h | Load testing |
+| `xxlarge` | 200,000 | 60 months | ~312M | ~3-4h | Extreme load |
+
+**Usage Examples:**
+
+```bash
+# Quick test (~1K employees)
+php artisan db:fresh-seed --scale=small --seed --force
+
+# Standard testing (~10K employees) - Recommended
+php artisan db:fresh-seed --scale=medium --seed --force
+
+# Stress testing (~50K employees)
+php artisan db:fresh-seed --scale=large --seed --force
+
+# Skip attendance for faster seeding
+php artisan db:fresh-seed --scale=large --seed --force --skip-attendance
+
+# Seed additional data without refresh
+php artisan seed:large --scale=medium
+```
+
+**Progress Tracking:**
+
+The seeder shows real-time progress logs:
+```
+[100/50000] Employees inserted
+[200/50000] Employees inserted
+...
+✅ Created 50,000 employees
+Target: 31,200,000 records
+  [156000/31200000] Attendance records inserted
+  [468000/31200000] Attendance records inserted
+...
+✅ Attendance: 31,200,000 records
+✅ Leave records: 750,000
+✅ Leave balances: 1,200,000
+
+🎉 OPERATION COMPLETE!
+```
+
+**Data Generated (Example - large scale):**
+
+| Table | Records |
+|-------|---------|
+| Departments | 106 |
+| Designations | 120 |
+| Users | 50,000 |
+| Salaries | 50,000 |
+| Attendance | ~31,200,000 |
+| Leaves | 750,000 |
+| Leave Balances | 1,200,000 |
 
 **Important:**
-- Ensure sufficient database disk space
-- For large seeding, disable foreign key checks:
+- Large scales (large/xlarge/xxlarge) require significant time and disk space
+- Ensure sufficient database disk space (~1.5GB for large scale)
+- Monitor MySQL `max_allowed_packet` setting:
   ```sql
-  SET FOREIGN_KEY_CHECKS = 0;
+  SET GLOBAL max_allowed_packet=256M;
   ```
-- Run during off-peak hours (may take several hours for 100M+)
-- Monitor MySQL `max_allowed_packet` setting
+- For very large datasets, run during off-peak hours
+- Use `--force` flag to skip confirmation prompt
 
 ---
 
@@ -371,6 +422,8 @@ curl -X POST http://localhost:8000/api/exports \
 
 ### POST /api/reports/salary
 
+Generate salary report with automatic deductions for late attendance and unpaid leave.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | start_date | date | Yes | Report period start |
@@ -378,6 +431,10 @@ curl -X POST http://localhost:8000/api/exports \
 | department_ids | array | No | Filter by departments |
 | user_ids | array | No | Filter by specific users |
 | format | string | No | `csv`, `xlsx`, `pdf`, `docx` |
+
+**Deduction Rules:**
+- **Late Attendance:** Every 3 late days = 1 day salary cut
+- **Unpaid Leave:** Deducted if no leave balance available
 
 **Example:**
 ```bash
@@ -389,6 +446,33 @@ curl -X POST http://localhost:8000/api/reports/salary \
     "end_date": "2024-03-31",
     "department_ids": [1, 2],
     "format": "csv"
+  }'
+```
+
+### POST /api/reports/salary/export
+
+Export salary report data to various formats.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| start_date | date | Yes | Report period start |
+| end_date | date | Yes | Report period end |
+| department_ids | array | No | Filter by departments |
+| user_ids | array | No | Filter by specific users |
+| format | string | Yes | `csv`, `xlsx`, `pdf`, `docx` |
+| filename | string | No | Custom filename |
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/reports/salary/export \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "2024-03-01",
+    "end_date": "2024-03-31",
+    "department_ids": [1, 2],
+    "format": "csv",
+    "filename": "march_salary_report"
   }'
 ```
 
@@ -423,10 +507,12 @@ curl -X POST http://localhost:8000/api/reports/salary \
 
 ### POST /api/reports/dynamic
 
+Create dynamic query reports with joins, filters, and aggregations.
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | model | string | Yes | Model name (e.g., `User`, `Attendance`) |
-| columns | array | Yes | Columns to select |
+| columns | array | Yes | Columns to select (use `table.column` format) |
 | joins | array | No | Table joins |
 | filters | array | No | Query filters |
 | aggregations | array | No | Aggregate functions |
@@ -435,19 +521,96 @@ curl -X POST http://localhost:8000/api/reports/salary \
 | date_column | string | No | Date column for filtering |
 | format | string | No | `csv`, `xlsx`, `pdf`, `docx`, `sql` |
 
-**Example:**
+**Important:** Use fully qualified column names with table prefix (e.g., `users.name`, `departments.name`) to avoid ambiguity errors.
+
+**Examples:**
+
+1. Simple User Export:
 ```bash
 curl -X POST http://localhost:8000/api/reports/dynamic \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "User",
-    "columns": ["name", "email", "status"],
+    "columns": ["users.name", "users.email", "users.status"],
     "filters": [
-      {"column": "status", "value": "active", "operator": "="}
-    ],
+      {"column": "users.status", "value": "active", "operator": "="}
+    ]
+  }'
+```
+
+2. With Joins (User + Department):
+```bash
+curl -X POST http://localhost:8000/api/reports/dynamic \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "User",
+    "columns": ["users.name", "users.email", "departments.name as department"],
     "joins": [
       {"table": "departments", "first": "users.department_id", "second": "departments.id"}
+    ],
+    "filters": [
+      {"column": "users.status", "value": "active", "operator": "="}
+    ]
+  }'
+```
+
+3. With Aggregations (Attendance Summary):
+```bash
+curl -X POST http://localhost:8000/api/reports/dynamic \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Attendance",
+    "columns": ["user_id"],
+    "aggregations": [
+      {"column": "id", "function": "COUNT", "alias": "total_days"},
+      {"column": "status", "function": "COUNT", "alias": "present_days"}
+    ],
+    "filters": [
+      {"column": "attendances.status", "value": "present", "operator": "="}
+    ],
+    "group_by": "user_id"
+  }'
+```
+
+4. With Date Range:
+```bash
+curl -X POST http://localhost:8000/api/reports/dynamic \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Attendance",
+    "columns": ["user_id", "status", "attendance_date"],
+    "start_date": "2024-03-01",
+    "end_date": "2024-03-31",
+    "date_column": "attendance_date"
+  }'
+```
+
+5. Complex Report (Users with Salaries):
+```bash
+curl -X POST http://localhost:8000/api/reports/dynamic \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "User",
+    "columns": [
+      "users.employee_id",
+      "users.name",
+      "departments.name as department",
+      "designations.name as designation",
+      "salaries.basic_salary",
+      "salaries.net_salary"
+    ],
+    "joins": [
+      {"table": "departments", "first": "users.department_id", "second": "departments.id"},
+      {"table": "designations", "first": "users.designation_id", "second": "designations.id"},
+      {"table": "salaries", "first": "users.salary_id", "second": "salaries.id"}
+    ],
+    "filters": [
+      {"column": "users.status", "value": "active", "operator": "="}
     ]
   }'
 ```
@@ -690,6 +853,9 @@ Deductions:
 ```
 turbo-export-app/
 ├── app/
+│   ├── Console/Commands/
+│   │   ├── FreshSeed.php               # Fresh DB + seed in one command
+│   │   └── SeedLargeData.php           # Seed large data without refresh
 │   ├── Http/Controllers/
 │   │   ├── AuthController.php
 │   │   └── SalaryReportController.php
@@ -729,12 +895,8 @@ turbo-export-app/
 └── database/
     ├── migrations/
     └── seeders/
-        ├── UserSeeder.php
-        ├── LargeDataSeeder.php          # 10M+ data (for initial testing)
-        ├── LargeScaleDataSeeder.php     # 100M+ data (for stress testing)
-        ├── OptimizedAttendanceSeeder.php
-        ├── LeaveSeeder.php
-        └── LeaveBalanceSeeder.php
+        ├── DatabaseSeeder.php
+        └── GeneralDataSeeder.php   # Unified seeder (111+ departments, 118+ designations)
 ```
 
 ## Testing
@@ -788,31 +950,34 @@ SET GLOBAL max_allowed_packet=268435456;
 ```
 
 ### Large Seeding: Out of memory
-Reduce chunk size in seeder:
-```php
-$this->chunkSize = 1000; // Reduce from 10000
+The commands already set `memory_limit` to 512M internally. For very large scales, run:
+```bash
+php -d memory_limit=1G artisan db:fresh-seed --scale=xlarge --seed --force
 ```
 
 ### Large Seeding: Slow performance
-1. Disable foreign key checks temporarily:
+The seeder already optimizes by:
+- Disabling keys during insert
+- Using batch inserts (500 records per batch)
+- Garbage collecting between batches
+
+For additional optimization:
 ```sql
 SET FOREIGN_KEY_CHECKS = 0;
-```
-2. Disable unique checks:
-```sql
 SET UNIQUE_CHECKS = 0;
-```
-3. Disable autocommit:
-```sql
 SET autocommit = 0;
 ```
 Remember to re-enable after seeding.
 
-### Large Seeding: "Duplicate entry for key designations_code_unique"
-Both seeders use the same hardcoded designations. Truncate tables before running a different seeder:
+### Large Seeding: "Duplicate entry" or table errors
+Always run fresh first:
 ```bash
-php artisan tinker --execute="DB::table('departments')->truncate(); DB::table('designations')->truncate();"
-php artisan db:seed --class=LargeScaleDataSeeder
+php artisan db:fresh-seed --scale=medium --seed --force
+```
+
+### Check seeding progress
+```bash
+php artisan tinker --execute="echo 'Users: ' . \App\Models\User::count() . PHP_EOL . 'Attendance: ' . \App\Models\Attendance::count();"
 ```
 
 ## License

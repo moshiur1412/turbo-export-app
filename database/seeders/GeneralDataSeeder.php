@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace Database\Seeders;
 
 use App\Models\Attendance;
 use App\Models\Department;
@@ -10,94 +10,160 @@ use App\Models\LeaveBalance;
 use App\Models\Salary;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Console\Command;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-class GenerateLargeData extends Command
+class GeneralDataSeeder extends Seeder
 {
-    protected $signature = 'generate:large-data 
-                            {--employees=100000 : Number of employees}
-                            {--months=60 : Number of months of attendance}
-                            {--leaves=10 : Leaves per employee}
-                            {--years=5 : Years of leave balance}
-                            {--chunk=10000 : Batch size}
-                            {--skip-employees : Skip employee generation}
-                            {--skip-attendance : Skip attendance generation}
-                            {--skip-leaves : Skip leave generation}
-                            {--skip-balances : Skip leave balance generation}';
+    protected array $config = [];
+    protected int $chunkSize;
+    protected ?object $output = null;
 
-    protected $description = 'Generate large scale data for stress testing';
-
-    private int $totalRecords = 0;
-
-    public function handle(): int
+    public function configure(array $config, ?object $output = null): self
     {
-        $this->info('Large Scale Data Generator');
-        $this->info('==============================');
-        
-        $employeeCount = (int) $this->option('employees');
-        $months = (int) $this->option('months');
-        $leavesPerEmployee = (int) $this->option('leaves');
-        $years = (int) $this->option('years');
-        $chunkSize = (int) $this->option('chunk');
-        
-        $attendanceTotal = $employeeCount * $months * 26;
-        $leavesTotal = $employeeCount * $leavesPerEmployee;
-        $balancesTotal = $employeeCount * $years * 12;
-        
-        $this->info("Configuration:");
-        $this->info("  Employees: " . number_format($employeeCount));
-        $this->info("  Attendance: " . number_format($attendanceTotal) . " records ({$months} months)");
-        $this->info("  Leaves: " . number_format($leavesTotal) . " records");
-        $this->info("  Leave Balances: " . number_format($balancesTotal) . " records ({$years} years)");
-        $this->info("  Chunk Size: " . number_format($chunkSize));
-        $this->info("");
-        
-        $this->totalRecords = $attendanceTotal + $leavesTotal + $balancesTotal;
-        $this->warn("Total records to generate: " . number_format($this->totalRecords));
-        $this->warn("Estimated time: " . $this->estimateTime($this->totalRecords));
-        
-        if (!$this->confirm('Do you want to continue?', true)) {
-            return self::FAILURE;
-        }
-        
-        $startTime = microtime(true);
-        
-        if (!$this->option('skip-employees')) {
-            $this->generateEmployees($employeeCount);
-        }
-        
-        if (!$this->option('skip-attendance')) {
-            $this->generateAttendance($employeeCount, $months, $chunkSize);
-        }
-        
-        if (!$this->option('skip-leaves')) {
-            $this->generateLeaves($employeeCount, $leavesPerEmployee, $chunkSize);
-        }
-        
-        if (!$this->option('skip-balances')) {
-            $this->generateLeaveBalances($employeeCount, $years, $chunkSize);
-        }
-        
-        $endTime = microtime(true);
-        $duration = round($endTime - $startTime);
-        
-        $this->newLine();
-        $this->info('==============================');
-        $this->info('DATA GENERATION COMPLETE');
-        $this->info('==============================');
-        $this->info("Total records: " . number_format($this->totalRecords));
-        $this->info("Time elapsed: " . $this->formatDuration($duration));
-        $this->info("Rate: " . number_format(floor($this->totalRecords / max($duration, 1))) . " records/sec");
-        
-        $this->printFinalSummary();
-        
-        return self::SUCCESS;
+        $this->config = $config;
+        $this->chunkSize = $config['chunk_size'] ?? 10000;
+        $this->output = $output ?? $this->command;
+        return $this;
     }
 
-    private function generateEmployees(int $count): void
+    protected function info(string $message): void
     {
-        $this->info('Generating employees...');
+        if ($this->output) {
+            $this->output->info($message);
+        }
+        fwrite(STDOUT, $message . PHP_EOL);
+        if (function_exists('fflush')) {
+            fflush(STDOUT);
+        }
+    }
+
+    protected function line(string $message): void
+    {
+        if ($this->output) {
+            $this->output->line($message);
+        }
+        fwrite(STDOUT, $message . PHP_EOL);
+        if (function_exists('fflush')) {
+            fflush(STDOUT);
+        }
+    }
+
+    protected function warn(string $message): void
+    {
+        if ($this->output) {
+            $this->output->warn($message);
+        }
+    }
+
+    protected function createProgressBar(int $max = 0): object
+    {
+        $output = $this->output ?? $this->command;
+        if ($output) {
+            return $output->getOutput()->createProgressBar($max);
+        }
+        return new class {
+            public function start(): void {}
+            public function advance(int $steps = 1): void {}
+            public function finish(): void {}
+            public function setMaxSteps(int $max): void {}
+        };
+    }
+
+    public function run(): void
+    {
+        $scale = $this->config['scale'] ?? 'medium';
+        $this->loadScaleConfig($scale);
+
+        $this->printHeader($scale);
+        $this->generateBaseData();
+        
+        if ($this->shouldGenerate('attendance')) {
+            $this->generateAttendanceData();
+        }
+        
+        if ($this->shouldGenerate('leaves')) {
+            $this->generateLeaveData();
+        }
+        
+        if ($this->shouldGenerate('balances')) {
+            $this->generateLeaveBalances();
+        }
+        
+        $this->printSummary();
+    }
+
+    private function loadScaleConfig(string $scale): void
+    {
+        $scales = [
+            'small' => [
+                'employees' => 1000,
+                'months' => 3,
+                'leaves_per_employee' => 5,
+                'balance_years' => 1,
+                'description' => '~200K records (quick testing)',
+            ],
+            'medium' => [
+                'employees' => 10000,
+                'months' => 6,
+                'leaves_per_employee' => 10,
+                'balance_years' => 1,
+                'description' => '~2M records (standard testing)',
+            ],
+            'large' => [
+                'employees' => 50000,
+                'months' => 24,
+                'leaves_per_employee' => 15,
+                'balance_years' => 2,
+                'description' => '~30M records (stress testing)',
+            ],
+            'xlarge' => [
+                'employees' => 100000,
+                'months' => 60,
+                'leaves_per_employee' => 20,
+                'balance_years' => 5,
+                'description' => '~150M records (load testing)',
+            ],
+            'xxlarge' => [
+                'employees' => 200000,
+                'months' => 60,
+                'leaves_per_employee' => 25,
+                'balance_years' => 5,
+                'description' => '~300M+ records (extreme load)',
+            ],
+        ];
+
+        if (isset($scales[$scale])) {
+            $this->config = array_merge($this->config, $scales[$scale]);
+        }
+    }
+
+    private function shouldGenerate(string $type): bool
+    {
+        if (isset($this->config['skip'])) {
+            return !in_array($type, $this->config['skip']);
+        }
+        return true;
+    }
+
+    private function printHeader(string $scale): void
+    {
+        $this->info('========================================');
+        $this->info('       GENERAL DATA SEEDER');
+        $this->info('========================================');
+        $this->info("Scale: {$scale}");
+        $this->info("Employees: " . number_format($this->config['employees']));
+        $this->info("Attendance months: " . $this->config['months']);
+        $this->info("Leaves/employee: " . $this->config['leaves_per_employee']);
+        $this->info("Balance years: " . $this->config['balance_years']);
+        $this->info("Chunk size: " . number_format($this->chunkSize));
+        $this->info('========================================');
+    }
+
+    private function generateBaseData(): void
+    {
+        Schema::disableForeignKeyConstraints();
         
         $this->disableKeys('users');
         $this->disableKeys('salaries');
@@ -105,375 +171,340 @@ class GenerateLargeData extends Command
         $departments = $this->getDepartments();
         $designations = $this->getDesignations();
         
-        $deptChunks = array_chunk($departments, 1000);
-        foreach ($deptChunks as $chunk) {
-            $insertData = array_map(fn($d) => array_merge($d, ['created_at' => now(), 'updated_at' => now()]), $chunk);
-            Department::insert($insertData);
-        }
-        
-        $desigChunks = array_chunk($designations, 1000);
-        foreach ($desigChunks as $chunk) {
-            $insertData = array_map(fn($d) => array_merge($d, ['created_at' => now(), 'updated_at' => now()]), $chunk);
-            Designation::insert($insertData);
-        }
-        
+        Department::insert($departments);
+        Designation::insert($designations);
+
         $totalDepts = Department::count();
         $totalDesigs = Designation::count();
         
-        $this->info("Created {$totalDepts} departments and {$totalDesigs} designations");
+        $this->info("Created {$totalDepts} departments, {$totalDesigs} designations");
+
+        $totalEmployees = $this->config['employees'];
+        $hashedPassword = bcrypt('password');
+        $now = now()->format('Y-m-d H:i:s');
         
-        $batchSize = 10000;
+        $this->info("Creating {$totalEmployees} employees...");
         
-        for ($batch = 0; $batch < ceil($count / $batchSize); $batch++) {
-            $users = [];
-            $salaries = [];
+        $salariesBatch = [];
+        $usersBatch = [];
+        $batchSize = 100;
+        
+        for ($num = 1; $num <= $totalEmployees; $num++) {
+            $basicSalary = rand(20000, 150000);
+            $houseRent = round($basicSalary * 0.3, 2);
+            $medical = round($basicSalary * 0.1, 2);
+            $transport = round($basicSalary * 0.1, 2);
+            $special = round($basicSalary * 0.15, 2);
+            $provident = round($basicSalary * 0.12, 2);
+            $tax = round($basicSalary * 0.05, 2);
+            $gross = round($basicSalary + $houseRent + $medical + $transport + $special, 2);
+            $net = round($gross - $provident - $tax, 2);
             
-            for ($i = 0; $i < $batchSize && ($batch * $batchSize + $i) < $count; $i++) {
-                $num = $batch * $batchSize + $i + 1;
-                $deptId = rand(1, $totalDepts);
-                $desigId = rand(1, $totalDesigs);
+            $salariesBatch[] = [
+                'basic_salary' => $basicSalary,
+                'house_rent' => $houseRent,
+                'medical_allowance' => $medical,
+                'transport_allowance' => $transport,
+                'special_allowance' => $special,
+                'provident_fund' => $provident,
+                'tax' => $tax,
+                'gross_salary' => $gross,
+                'net_salary' => $net,
+                'is_active' => 1,
+                'effective_date' => date('Y-m-d', strtotime("-".rand(1, 365)." days")),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            
+            $usersBatch[] = [
+                'employee_id' => 'EMP' . str_pad((string)$num, 6, '0', STR_PAD_LEFT),
+                'name' => "Employee {$num}",
+                'email' => "employee{$num}@example.com",
+                'password' => $hashedPassword,
+                'department_id' => rand(1, $totalDepts),
+                'designation_id' => rand(1, $totalDesigs),
+                'salary_id' => $num,
+                'join_date' => date('Y-m-d', strtotime("-".rand(1, 1800)." days")),
+                'status' => rand(1, 100) <= 95 ? 'active' : (rand(1, 2) == 1 ? 'inactive' : 'on_leave'),
+                'email_verified_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            
+            if ($num % $batchSize === 0) {
+                DB::table('salaries')->insert($salariesBatch);
+                DB::table('users')->insert($usersBatch);
+                $salariesBatch = [];
+                $usersBatch = [];
                 
-                $basicSalary = rand(20000, 150000);
-                $houseRent = $basicSalary * 0.3;
-                $medical = $basicSalary * 0.1;
-                $transport = $basicSalary * 0.1;
-                $special = $basicSalary * 0.15;
-                $provident = $basicSalary * 0.12;
-                $tax = $basicSalary * 0.05;
-                $gross = $basicSalary + $houseRent + $medical + $transport + $special;
-                $net = $gross - $provident - $tax;
-                
-                $users[] = [
-                    'employee_id' => 'EMP' . str_pad((string)$num, 6, '0', STR_PAD_LEFT),
-                    'name' => "Employee {$num}",
-                    'email' => "employee{$num}@example.com",
-                    'password' => bcrypt('password'),
-                    'department_id' => $deptId,
-                    'designation_id' => $desigId,
-                    'join_date' => Carbon::now()->subMonths(rand(1, 60)),
-                    'status' => rand(1, 100) <= 95 ? 'active' : (rand(1, 2) == 1 ? 'inactive' : 'on_leave'),
-                    'email_verified_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-                
-                $salaries[] = [
-                    'user_id' => $batch * $batchSize + $i + 1,
-                    'basic_salary' => $basicSalary,
-                    'house_rent' => $houseRent,
-                    'medical_allowance' => $medical,
-                    'transport_allowance' => $transport,
-                    'special_allowance' => $special,
-                    'provident_fund' => $provident,
-                    'tax' => $tax,
-                    'gross_salary' => $gross,
-                    'net_salary' => $net,
-                    'is_active' => true,
-                    'effective_date' => Carbon::now()->subMonths(rand(1, 12)),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                $this->info("  [{$num}/{$totalEmployees}] Employees inserted");
             }
-            
-            User::insert($users);
-            Salary::insert($salaries);
-            
-            $progress = round((($batch + 1) / ceil($count / $batchSize)) * 100);
-            $this->line("  Employees: {$progress}%");
+        }
+        
+        if (!empty($salariesBatch)) {
+            DB::table('salaries')->insert($salariesBatch);
+            DB::table('users')->insert($usersBatch);
         }
         
         $this->enableKeys('users');
         $this->enableKeys('salaries');
+        Schema::enableForeignKeyConstraints();
         
-        $this->info("Created " . number_format(User::count()) . " employees");
+        $this->info("✅ Created " . number_format(User::count()) . " employees");
     }
 
-    private function generateAttendance(int $employeeCount, int $months, int $chunkSize): void
+    private function generateSalary(float $basicSalary): array
     {
-        $this->info('Generating attendance records...');
+        $houseRent = $basicSalary * 0.3;
+        $medical = $basicSalary * 0.1;
+        $transport = $basicSalary * 0.1;
+        $special = $basicSalary * 0.15;
+        $provident = $basicSalary * 0.12;
+        $tax = $basicSalary * 0.05;
+        $gross = $basicSalary + $houseRent + $medical + $transport + $special;
+        $net = $gross - $provident - $tax;
         
+        return [
+            'basic_salary' => $basicSalary,
+            'house_rent' => $houseRent,
+            'medical_allowance' => $medical,
+            'transport_allowance' => $transport,
+            'special_allowance' => $special,
+            'provident_fund' => $provident,
+            'tax' => $tax,
+            'gross_salary' => $gross,
+            'net_salary' => $net,
+            'is_active' => true,
+            'effective_date' => Carbon::now()->subMonths(rand(1, 12)),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    private function generateAttendanceData(): void
+    {
         $this->disableKeys('attendances');
         
-        $bar = $this->output->createProgressBar();
-        $bar->setMaxSteps($employeeCount * $months);
-        $bar->start();
+        $totalEmployees = User::count();
+        $months = $this->config['months'];
+        $daysPerMonth = 26;
+        $totalRecords = $totalEmployees * $months * $daysPerMonth;
+        $now = now()->format('Y-m-d H:i:s');
         
-        $batch = [];
+        $this->info("Target: " . number_format($totalRecords) . " records");
+        
+        $bar = $this->createProgressBar($totalRecords);
+        $batchSize = 500;
+        $values = [];
+        $insertedCount = 0;
+        $lastProgress = 0;
         
         for ($month = $months; $month >= 1; $month--) {
             $monthStart = Carbon::now()->subMonths($month)->startOfMonth();
             
-            for ($day = 0; $day < 26; $day++) {
+            for ($day = 0; $day < $daysPerMonth; $day++) {
                 $date = $monthStart->copy()->addDays($day);
                 
                 if ($date->isWeekend()) {
                     continue;
                 }
                 
-                for ($userId = 1; $userId <= $employeeCount; $userId++) {
-                    $batch[] = $this->generateAttendanceRecord($userId, $date);
+                $dateStr = $date->format('Y-m-d');
+                
+                for ($userId = 1; $userId <= $totalEmployees; $userId++) {
+                    $rand = rand(1, 100);
                     
-                    if (count($batch) >= $chunkSize) {
-                        Attendance::insert($batch);
-                        $batch = [];
-                        $bar->advance($chunkSize);
+                    if ($rand <= 75) {
+                        $values[] = "({$userId}, '{$dateStr}', '".sprintf('%02d:%02d', rand(8, 10), rand(0, 59))."', '".sprintf('%02d:%02d', rand(17, 20), rand(0, 59))."', ".(rand(7, 10) + (rand(0, 59) / 60)).", 'present', '{$now}', '{$now}')";
+                    } elseif ($rand <= 90) {
+                        $values[] = "({$userId}, '{$dateStr}', '".sprintf('%02d:%02d', rand(9, 12), rand(0, 59))."', '".sprintf('%02d:%02d', rand(14, 17), rand(0, 59))."', ".(rand(4, 6) + (rand(0, 59) / 60)).", 'present', '{$now}', '{$now}')";
+                    } elseif ($rand <= 95) {
+                        $values[] = "({$userId}, '{$dateStr}', '".sprintf('%02d:%02d', rand(10, 12), rand(0, 59))."', '".sprintf('%02d:%02d', rand(17, 20), rand(0, 59))."', ".(rand(7, 9) + (rand(0, 59) / 60)).", 'late', '{$now}', '{$now}')";
+                    } elseif ($rand <= 98) {
+                        $values[] = "({$userId}, '{$dateStr}', NULL, NULL, 0, 'absent', '{$now}', '{$now}')";
+                    } else {
+                        $values[] = "({$userId}, '{$dateStr}', NULL, NULL, 0, 'leave', '{$now}', '{$now}')";
+                    }
+                    
+                    if (count($values) >= $batchSize) {
+                        $sql = "INSERT INTO attendances (user_id, attendance_date, check_in, check_out, worked_hours, status, created_at, updated_at) VALUES " . implode(', ', $values);
+                        DB::statement($sql);
+                        $insertedCount += $batchSize;
+                        $bar->advance($batchSize);
+                        $values = [];
+                        
+                        $progress = round(($insertedCount / $totalRecords) * 100);
+                        if ($progress >= $lastProgress + 1) {
+                            $this->info("  [{$insertedCount}/{$totalRecords}] Attendance records inserted");
+                            $lastProgress = $progress;
+                        }
+                        
+                        gc_collect_cycles();
                     }
                 }
             }
         }
         
-        if (!empty($batch)) {
-            Attendance::insert($batch);
-            $bar->advance(count($batch));
+        if (!empty($values)) {
+            $sql = "INSERT INTO attendances (user_id, attendance_date, check_in, check_out, worked_hours, status, created_at, updated_at) VALUES " . implode(', ', $values);
+            DB::statement($sql);
+            $bar->advance(count($values));
         }
         
         $bar->finish();
-        $this->newLine();
+        $this->info('');
+        $this->info('✅ Attendance: ' . number_format(Attendance::count()) . ' records');
         
         $this->enableKeys('attendances');
-        
-        $this->info("Created " . number_format(Attendance::count()) . " attendance records");
     }
 
-    private function generateAttendanceRecord(int $userId, Carbon $date): array
+    private function generateLeaveData(): void
     {
-        $rand = rand(1, 100);
-        
-        if ($rand <= 75) {
-            return [
-                'user_id' => $userId,
-                'attendance_date' => $date->format('Y-m-d'),
-                'check_in' => sprintf('%02d:%02d', rand(8, 10), rand(0, 59)),
-                'check_out' => sprintf('%02d:%02d', rand(17, 20), rand(0, 59)),
-                'worked_hours' => rand(7, 10) + (rand(0, 59) / 60),
-                'status' => 'present',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        } elseif ($rand <= 90) {
-            return [
-                'user_id' => $userId,
-                'attendance_date' => $date->format('Y-m-d'),
-                'check_in' => sprintf('%02d:%02d', rand(9, 12), rand(0, 59)),
-                'check_out' => sprintf('%02d:%02d', rand(14, 17), rand(0, 59)),
-                'worked_hours' => rand(4, 6) + (rand(0, 59) / 60),
-                'status' => 'present',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        } elseif ($rand <= 95) {
-            return [
-                'user_id' => $userId,
-                'attendance_date' => $date->format('Y-m-d'),
-                'check_in' => sprintf('%02d:%02d', rand(10, 12), rand(0, 59)),
-                'check_out' => sprintf('%02d:%02d', rand(17, 20), rand(0, 59)),
-                'worked_hours' => rand(7, 9) + (rand(0, 59) / 60),
-                'status' => 'late',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        } elseif ($rand <= 98) {
-            return [
-                'user_id' => $userId,
-                'attendance_date' => $date->format('Y-m-d'),
-                'check_in' => null,
-                'check_out' => null,
-                'worked_hours' => 0,
-                'status' => 'absent',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        } else {
-            return [
-                'user_id' => $userId,
-                'attendance_date' => $date->format('Y-m-d'),
-                'check_in' => null,
-                'check_out' => null,
-                'worked_hours' => 0,
-                'status' => 'leave',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-    }
-
-    private function generateLeaves(int $employeeCount, int $leavesPerEmployee, int $chunkSize): void
-    {
-        $this->info('Generating leave records...');
-        
         $this->disableKeys('leaves');
         
-        $totalLeaves = $employeeCount * $leavesPerEmployee;
-        $bar = $this->output->createProgressBar();
-        $bar->setMaxSteps($totalLeaves);
-        $bar->start();
+        $totalEmployees = User::count();
+        $totalLeaves = $totalEmployees * $this->config['leaves_per_employee'];
+        $now = now()->format('Y-m-d H:i:s');
         
-        $batch = [];
+        $bar = $this->createProgressBar($totalLeaves);
+        
+        $values = [];
+        $leaveTypes = ['casual', 'sick', 'annual', 'unpaid'];
         $statuses = ['approved', 'approved', 'approved', 'approved', 'pending', 'rejected'];
+        $batchSize = 500;
+        $insertedCount = 0;
         
-        for ($userId = 1; $userId <= $employeeCount; $userId++) {
-            for ($i = 0; $i < $leavesPerEmployee; $i++) {
-                $startDate = Carbon::now()->subMonths(rand(0, 59))->startOfMonth()->addDays(rand(0, 25));
+        for ($userId = 1; $userId <= $totalEmployees; $userId++) {
+            for ($i = 0; $i < $this->config['leaves_per_employee']; $i++) {
+                $startDate = date('Y-m-d', strtotime("-".rand(0, 1800)." days"));
                 $days = rand(1, 10);
+                $endDate = date('Y-m-d', strtotime($startDate . " + " . ($days - 1) . " days"));
                 $status = $statuses[array_rand($statuses)];
+                $leaveType = $leaveTypes[array_rand($leaveTypes)];
+                $isPaid = ($status === 'approved' && rand(1, 100) <= 70) ? 1 : 0;
+                $approvedBy = $status === 'approved' ? rand(1, min(10, $totalEmployees)) : 'NULL';
+                $approvedAt = $status === 'approved' ? "'{$now}'" : 'NULL';
                 
-                $batch[] = [
-                    'user_id' => $userId,
-                    'leave_type' => ['casual', 'sick', 'annual', 'unpaid'][rand(0, 3)],
-                    'start_date' => $startDate->format('Y-m-d'),
-                    'end_date' => $startDate->copy()->addDays($days - 1)->format('Y-m-d'),
-                    'days' => $days,
-                    'reason' => 'Personal reason',
-                    'status' => $status,
-                    'is_paid' => $status === 'approved' && rand(1, 100) <= 70,
-                    'approved_by' => $status === 'approved' ? rand(1, 10) : null,
-                    'approved_at' => $status === 'approved' ? now() : null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                $values[] = "({$userId}, '{$leaveType}', '{$startDate}', '{$endDate}', {$days}, 'Personal reason', '{$status}', {$isPaid}, {$approvedBy}, {$approvedAt}, '{$now}', '{$now}')";
                 
-                if (count($batch) >= $chunkSize) {
-                    Leave::insert($batch);
-                    $batch = [];
-                    $bar->advance($chunkSize);
+                if (count($values) >= $batchSize) {
+                    $sql = "INSERT INTO leaves (user_id, leave_type, start_date, end_date, days, reason, status, is_paid, approved_by, approved_at, created_at, updated_at) VALUES " . implode(', ', $values);
+                    DB::statement($sql);
+                    $insertedCount += $batchSize;
+                    $bar->advance($batchSize);
+                    $values = [];
+                    
+                    if ($insertedCount % 10000 === 0) {
+                        $this->info("  [{$insertedCount}/{$totalLeaves}] Leave records inserted");
+                    }
+                    
+                    gc_collect_cycles();
                 }
             }
         }
         
-        if (!empty($batch)) {
-            Leave::insert($batch);
-            $bar->advance(count($batch));
+        if (!empty($values)) {
+            $sql = "INSERT INTO leaves (user_id, leave_type, start_date, end_date, days, reason, status, is_paid, approved_by, approved_at, created_at, updated_at) VALUES " . implode(', ', $values);
+            DB::statement($sql);
+            $bar->advance(count($values));
         }
         
         $bar->finish();
-        $this->newLine();
+        $this->info('');
+        $this->info('✅ Leave records: ' . number_format(Leave::count()));
         
         $this->enableKeys('leaves');
-        
-        $this->info("Created " . number_format(Leave::count()) . " leave records");
     }
 
-    private function generateLeaveBalances(int $employeeCount, int $years, int $chunkSize): void
+    private function generateLeaveBalances(): void
     {
-        $this->info('Generating leave balance records...');
-        
         $this->disableKeys('leave_balances');
         
-        $totalBalances = $employeeCount * $years * 12;
-        $bar = $this->output->createProgressBar();
-        $bar->setMaxSteps($totalBalances);
-        $bar->start();
+        $totalEmployees = User::count();
+        $years = $this->config['balance_years'];
+        $totalBalances = $totalEmployees * $years * 12;
+        $now = now()->format('Y-m-d H:i:s');
         
-        $batch = [];
+        $bar = $this->createProgressBar($totalBalances);
+        
+        $values = [];
         $currentYear = Carbon::now()->year;
+        $batchSize = 500;
+        $insertedCount = 0;
         
         for ($yearOffset = $years - 1; $yearOffset >= 0; $yearOffset--) {
             $year = $currentYear - $yearOffset;
             
             for ($month = 1; $month <= 12; $month++) {
-                for ($userId = 1; $userId <= $employeeCount; $userId++) {
-                    $batch[] = [
-                        'user_id' => $userId,
-                        'year' => $year,
-                        'month' => $month,
-                        'casual_leave' => 2.0,
-                        'sick_leave' => 1.0,
-                        'annual_leave' => 2.0,
-                        'used_casual' => rand(0, 2),
-                        'used_sick' => rand(0, 1),
-                        'used_annual' => rand(0, 2),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                for ($userId = 1; $userId <= $totalEmployees; $userId++) {
+                    $values[] = "({$userId}, {$year}, {$month}, 2.0, 1.0, 2.0, ".rand(0, 2).", ".rand(0, 1).", ".rand(0, 2).", '{$now}', '{$now}')";
                     
-                    if (count($batch) >= $chunkSize) {
-                        LeaveBalance::insert($batch);
-                        $batch = [];
-                        $bar->advance($chunkSize);
+                    if (count($values) >= $batchSize) {
+                        $sql = "INSERT INTO leave_balances (user_id, year, month, casual_leave, sick_leave, annual_leave, used_casual, used_sick, used_annual, created_at, updated_at) VALUES " . implode(', ', $values);
+                        DB::statement($sql);
+                        $insertedCount += $batchSize;
+                        $bar->advance($batchSize);
+                        $values = [];
+                        
+                        if ($insertedCount % 10000 === 0) {
+                            $this->info("  [{$insertedCount}/{$totalBalances}] Leave balances inserted");
+                        }
+                        
+                        gc_collect_cycles();
                     }
                 }
             }
         }
         
-        if (!empty($batch)) {
-            LeaveBalance::insert($batch);
-            $bar->advance(count($batch));
+        if (!empty($values)) {
+            $sql = "INSERT INTO leave_balances (user_id, year, month, casual_leave, sick_leave, annual_leave, used_casual, used_sick, used_annual, created_at, updated_at) VALUES " . implode(', ', $values);
+            DB::statement($sql);
+            $bar->advance(count($values));
         }
         
         $bar->finish();
-        $this->newLine();
+        $this->info('');
+        $this->info('✅ Leave balances: ' . number_format(LeaveBalance::count()));
         
         $this->enableKeys('leave_balances');
-        
-        $this->info("Created " . number_format(LeaveBalance::count()) . " leave balance records");
     }
 
     private function disableKeys(string $table): void
     {
-        DB::statement("ALTER TABLE {$table} DISABLE KEYS");
+        try {
+            DB::statement("ALTER TABLE {$table} DISABLE KEYS");
+        } catch (\Exception $e) {
+        }
     }
 
     private function enableKeys(string $table): void
     {
-        DB::statement("ALTER TABLE {$table} ENABLE KEYS");
+        try {
+            DB::statement("ALTER TABLE {$table} ENABLE KEYS");
+        } catch (\Exception $e) {
+        }
     }
 
-    private function estimateTime(int $records): string
+    private function printSummary(): void
     {
-        $rate = 5000;
-        $seconds = $records / $rate;
-        
-        if ($seconds < 60) {
-            return "{$seconds} seconds";
-        }
-        
-        $minutes = floor($seconds / 60);
-        if ($minutes < 60) {
-            return "{$minutes} minutes";
-        }
-        
-        $hours = floor($minutes / 60);
-        $remainingMinutes = $minutes % 60;
-        
-        return "{$hours}h {$remainingMinutes}m";
+        $this->info('');
+        $this->info('========================================');
+        $this->info('           DATA GENERATION COMPLETE');
+        $this->info('========================================');
+        $this->info('Departments:     ' . number_format(Department::count()));
+        $this->info('Designations:    ' . number_format(Designation::count()));
+        $this->info('Employees:       ' . number_format(User::count()));
+        $this->info('Salaries:        ' . number_format(Salary::count()));
+        $this->info('Attendance:      ' . number_format(Attendance::count()));
+        $this->info('Leaves:          ' . number_format(Leave::count()));
+        $this->info('Leave Balances:  ' . number_format(LeaveBalance::count()));
+        $this->info('========================================');
     }
 
-    private function formatDuration(int $seconds): string
-    {
-        if ($seconds < 60) {
-            return "{$seconds} seconds";
-        }
-        
-        $minutes = floor($seconds / 60);
-        if ($minutes < 60) {
-            return "{$minutes} minutes";
-        }
-        
-        $hours = floor($minutes / 60);
-        $remainingMinutes = $minutes % 60;
-        
-        return "{$hours}h {$remainingMinutes}m";
-    }
-
-    private function printFinalSummary(): void
-    {
-        $this->table(
-            ['Table', 'Records'],
-            [
-                ['Users', number_format(User::count())],
-                ['Salaries', number_format(Salary::count())],
-                ['Departments', number_format(Department::count())],
-                ['Designations', number_format(Designation::count())],
-                ['Attendance', number_format(Attendance::count())],
-                ['Leaves', number_format(Leave::count())],
-                ['Leave Balances', number_format(LeaveBalance::count())],
-            ]
-        );
-    }
-
+    
     private function getDepartments(): array
     {
-        return [
+        $departments = [
             ['name' => 'Software Development', 'code' => 'SWD'],
             ['name' => 'Database Administration', 'code' => 'DBA'],
             ['name' => 'Network Operations', 'code' => 'NET'],
@@ -581,11 +612,13 @@ class GenerateLargeData extends Command
             ['name' => 'Professional Services', 'code' => 'PS'],
             ['name' => 'Consulting Services', 'code' => 'CON'],
         ];
+
+        return array_map(fn($d) => array_merge($d, ['created_at' => now(), 'updated_at' => now()]), $departments);
     }
 
     private function getDesignations(): array
     {
-        return [
+        $designations = [
             ['name' => 'Junior Software Engineer', 'code' => 'JSE', 'min_salary' => 25000, 'max_salary' => 45000],
             ['name' => 'Software Engineer', 'code' => 'SE', 'min_salary' => 40000, 'max_salary' => 70000],
             ['name' => 'Senior Software Engineer', 'code' => 'SSE', 'min_salary' => 65000, 'max_salary' => 100000],
@@ -705,5 +738,7 @@ class GenerateLargeData extends Command
             ['name' => 'Infrastructure Engineer', 'code' => 'IE', 'min_salary' => 70000, 'max_salary' => 120000],
             ['name' => 'Senior Infrastructure Engineer', 'code' => 'SIE', 'min_salary' => 115000, 'max_salary' => 180000],
         ];
+
+        return array_map(fn($d) => array_merge($d, ['created_at' => now(), 'updated_at' => now()]), $designations);
     }
 }

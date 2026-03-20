@@ -96,8 +96,6 @@ class ReportBuilder
             $selectColumns = array_merge($selectColumns, $this->aggregations);
         }
 
-        $query->select($selectColumns);
-
         foreach ($this->joins as $join) {
             $query->join($join['table'], $join['first'], $join['operator'], $join['second']);
         }
@@ -107,6 +105,11 @@ class ReportBuilder
             $value = $filter['value'];
             $operator = $filter['operator'];
 
+            if (!str_contains($column, '.')) {
+                $table = $model->getTable();
+                $column = $table . '.' . $column;
+            }
+
             match ($operator) {
                 'between' => $query->whereBetween($column, $value),
                 'in' => $query->whereIn($column, $value),
@@ -114,6 +117,8 @@ class ReportBuilder
                 default => $query->where($column, $operator, $value),
             };
         }
+
+        $query->select($selectColumns);
 
         return $query;
     }

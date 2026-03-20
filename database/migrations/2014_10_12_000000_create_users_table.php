@@ -23,7 +23,6 @@ return new class extends Migration
             $table->foreignId('designation_id')->nullable()->constrained('designations')->nullOnDelete();
             $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();
             $table->foreignId('salary_id')->nullable()->constrained('salaries')->nullOnDelete();
-            $table->foreignId('attendance_id')->nullable()->constrained('attendances')->nullOnDelete();
             $table->date('join_date')->nullable();
             $table->enum('status', ['active', 'inactive', 'on_leave', 'terminated'])->default('active');
             $table->rememberToken();
