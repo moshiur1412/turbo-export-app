@@ -209,7 +209,9 @@ class ExportService
             }
         });
 
-        return $driver->finalize(storage_path('app/' . $filePath), null);
+        $driver->finalize(storage_path('app/' . $filePath), null);
+        
+        return $filePath;
     }
 
     public function getProgress(string $exportId): array

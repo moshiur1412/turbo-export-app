@@ -1,33 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 
-interface ExportProgressProps {
-    exportId: string;
-    onComplete?: (downloadUrl: string) => void;
-    onError?: (error: string) => void;
-    pollingInterval?: number;
-}
-
-interface ProgressData {
-    progress: number;
-    total: number;
-    status: 'processing' | 'completed' | 'failed' | 'not_found';
-    file_path?: string;
-    updated_at?: string;
-}
-
 export default function ExportProgress({
     exportId,
     onComplete,
     onError,
     pollingInterval = 1000,
-}: ExportProgressProps) {
-    const [progress, setProgress] = useState<ProgressData>({
+}) {
+    const [progress, setProgress] = useState({
         progress: 0,
         total: 0,
         status: 'processing',
     });
-    const [error, setError] = useState<string | null>(null);
-    const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+    const [error, setError] = useState(null);
+    const [downloadUrl, setDownloadUrl] = useState(null);
 
     const fetchProgress = useCallback(async () => {
         try {
@@ -42,7 +27,7 @@ export default function ExportProgress({
                 throw new Error('Failed to fetch progress');
             }
 
-            const data: ProgressData = await response.json();
+            const data = await response.json();
             setProgress(data);
 
             if (data.status === 'completed' && data.file_path) {

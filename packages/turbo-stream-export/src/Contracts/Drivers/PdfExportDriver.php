@@ -37,6 +37,10 @@ class PdfExportDriver implements ExportDriverInterface
         
         $this->pdf->AddPage();
         $this->pdf->SetFont('helvetica', '', 8);
+        
+        $this->pdf->SetTextColor(0, 0, 0);
+        $this->pdf->SetFillColor(255, 255, 255);
+        $this->pdf->SetDrawColor(0, 0, 0);
     }
 
     public function getFormat(): string
@@ -63,9 +67,10 @@ class PdfExportDriver implements ExportDriverInterface
         $this->pdf->SetHeaderData('', 0, $this->title, 'Generated: ' . date('Y-m-d H:i:s'));
         
         $colWidth = (190 / count($columns));
+        
         $this->pdf->SetFillColor(68, 114, 196);
-        $this->pdf->SetTextColor(255);
-        $this->pdf->SetDrawColor(0);
+        $this->pdf->SetTextColor(255, 255, 255);
+        $this->pdf->SetDrawColor(0, 0, 0);
         $this->pdf->SetLineWidth(0.1);
         
         foreach ($columns as $column) {
@@ -73,7 +78,7 @@ class PdfExportDriver implements ExportDriverInterface
         }
         
         $this->pdf->Ln();
-        $this->pdf->SetTextColor(0);
+        $this->pdf->SetTextColor(0, 0, 0);
         $this->pdf->SetFont('helvetica', '', 8);
     }
 
@@ -91,11 +96,8 @@ class PdfExportDriver implements ExportDriverInterface
         $fill = ($this->currentRow % 2) == 0;
         $this->pdf->SetFillColor(245, 245, 245);
         
-        $colIndex = 0;
         foreach ($data as $value) {
-            $cellWidth = $colWidth;
-            $this->pdf->Cell($cellWidth, $rowHeight, $this->truncateValue($value, 30), 1, 0, 'L', $fill);
-            $colIndex++;
+            $this->pdf->Cell($colWidth, $rowHeight, $this->truncateValue($value, 30), 1, 0, 'L', $fill);
         }
         
         $this->pdf->Ln();

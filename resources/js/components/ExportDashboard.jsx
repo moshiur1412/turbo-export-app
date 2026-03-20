@@ -2,18 +2,6 @@ import { useState, useCallback } from 'react';
 import ExportTrigger from './ExportTrigger';
 import ExportProgress from './ExportProgress';
 
-interface ExportDashboardProps {
-    model: string;
-    columns: string[];
-    filters?: Record<string, unknown>;
-    format?: 'csv' | 'xlsx';
-    filename?: string;
-    buttonText?: string;
-    buttonVariant?: 'primary' | 'secondary' | 'danger';
-    showTriggerAfterComplete?: boolean;
-    autoDownload?: boolean;
-}
-
 export default function ExportDashboard({
     model,
     columns,
@@ -24,16 +12,16 @@ export default function ExportDashboard({
     buttonVariant = 'primary',
     showTriggerAfterComplete = false,
     autoDownload = false,
-}: ExportDashboardProps) {
-    const [exportId, setExportId] = useState<string | null>(null);
+}) {
+    const [exportId, setExportId] = useState(null);
     const [completed, setCompleted] = useState(false);
 
-    const handleStart = useCallback((newExportId: string) => {
+    const handleStart = useCallback((newExportId) => {
         setExportId(newExportId);
         setCompleted(false);
     }, []);
 
-    const handleComplete = useCallback((downloadUrl: string) => {
+    const handleComplete = useCallback((downloadUrl) => {
         setCompleted(true);
         
         if (autoDownload) {

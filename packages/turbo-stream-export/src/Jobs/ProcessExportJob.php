@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace TurboStreamExport\Jobs;
 
+use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -36,7 +38,8 @@ class ProcessExportJob implements ShouldQueue
         public readonly string $format = 'csv',
         public readonly int $userId,
         public readonly ?int $customChunkSize = null,
-        public readonly bool $highPriority = false
+        public readonly bool $highPriority = false,
+        public readonly ?string $queryBuilder = null,
     ) {
         $this->onQueue($this->highPriority ? 'exports-high' : 'exports');
         
@@ -56,11 +59,7 @@ class ProcessExportJob implements ShouldQueue
         $startTime = microtime(true);
         
         try {
-            $query = $this->modelClass::query();
-
-            if (!empty($this->filters)) {
-                $this->applyFilters($query, $this->filters);
-            }
+            $query = $this->buildQuery();
 
             $estimatedRecords = $this->estimateRecordCount($query);
             $chunkSize = $this->determineChunkSize($estimatedRecords);
@@ -107,6 +106,52 @@ class ProcessExportJob implements ShouldQueue
             
             throw $e;
         }
+    }
+
+    private function buildQuery(): Builder
+    {
+        if ($this->queryBuilder && class_exists($this->queryBuilder)) {
+            $filters = is_array($this->filters) ? $this->filters : [];
+            $reportType = $filters['_report_type'] ?? null;
+            
+            if ($reportType && class_exists('App\\Enums\\ReportType')) {
+                $type = \App\Enums\ReportType::tryFrom($reportType);
+                if ($type) {
+                    $builder = new $this->queryBuilder($type, $filters);
+                    return $builder->buildQuery();
+                }
+            }
+            
+            if ($this->queryBuilder === 'App\\Services\\ReportQueryBuilder') {
+                $builder = new $this->queryBuilder(
+                    \App\Enums\ReportType::SALARY_MASTER,
+                    $filters
+                );
+                return $builder->buildQuery();
+            }
+            
+            $builder = new $this->queryBuilder();
+            
+            if ($builder instanceof Closure) {
+                return ($builder)();
+            }
+            
+            if (method_exists($builder, 'buildQuery')) {
+                return $builder->buildQuery($filters);
+            }
+            
+            if (method_exists($builder, 'getQuery')) {
+                return $builder->getQuery($filters);
+            }
+        }
+
+        $query = $this->modelClass::query();
+
+        if (!empty($this->filters)) {
+            $this->applyFilters($query, $this->filters);
+        }
+
+        return $query;
     }
 
     private function applyFilters($query, array $filters): void

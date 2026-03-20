@@ -1,18 +1,4 @@
 import { useState, useCallback } from 'react';
-import { router } from '@inertiajs/react';
-
-interface ExportTriggerProps {
-    model: string;
-    columns: string[];
-    filters?: Record<string, unknown>;
-    format?: 'csv' | 'xlsx';
-    filename?: string;
-    onStart?: (exportId: string) => void;
-    onError?: (error: string) => void;
-    buttonText?: string;
-    buttonVariant?: 'primary' | 'secondary' | 'danger';
-    disabled?: boolean;
-}
 
 export default function ExportTrigger({
     model,
@@ -25,9 +11,9 @@ export default function ExportTrigger({
     buttonText = 'Export Data',
     buttonVariant = 'primary',
     disabled = false,
-}: ExportTriggerProps) {
+}) {
     const [isExporting, setIsExporting] = useState(false);
-    const [exportId, setExportId] = useState<string | null>(null);
+    const [exportId, setExportId] = useState(null);
 
     const handleExport = useCallback(async () => {
         setIsExporting(true);
