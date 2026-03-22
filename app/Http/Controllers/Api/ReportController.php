@@ -21,7 +21,7 @@ class ReportController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $userId = $request->user()->id ?? 1;
+        $userId = $request->user()->id;
         $perPage = $request->get('per_page', 15);
 
         $reports = $this->reportService->getUserReports($userId, $perPage);
@@ -83,7 +83,7 @@ class ReportController extends Controller
             ], 400);
         }
 
-        $userId = $request->user()->id ?? 1;
+        $userId = $request->user()->id;
         $format = $request->format ? ReportFormat::from($request->format) : null;
 
         try {
@@ -244,6 +244,45 @@ class ReportController extends Controller
             'success' => true,
             'data' => $this->reportService->getFormats(),
         ]);
+    }
+
+    public function preview(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'type' => ['required', 'string'],
+            'filters' => ['sometimes', 'array'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $type = ReportType::tryFrom($request->type);
+
+        if (!$type) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Invalid report type',
+            ], 400);
+        }
+
+        try {
+            $preview = $this->reportService->getPreview($type, $request->filters ?? [], 5);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $preview,
+                'total_count' => $this->reportService->getCount($type, $request->filters ?? []),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     private function formatReportResponse(Report $report): array

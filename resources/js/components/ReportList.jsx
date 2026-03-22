@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 
 const STATUS_CONFIG = {
     pending: { bg: 'bg-amber-100', text: 'text-amber-800', icon: '⏳' },
@@ -26,8 +27,8 @@ export default function ReportList({ userId = 1, onRefresh }) {
     const fetchReports = useCallback(async (page = 1) => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/reports?page=${page}`);
-            const data = await response.json();
+            const response = await axios.get(`/api/reports?page=${page}&per_page=10`);
+            const data = response.data;
             
             if (data.success) {
                 setReports(data.data);
@@ -56,8 +57,8 @@ export default function ReportList({ userId = 1, onRefresh }) {
         const interval = setInterval(() => {
             processingReports.forEach(async (report) => {
                 try {
-                    const response = await fetch(`/api/reports/${report.id}/progress`);
-                    const result = await response.json();
+                    const response = await axios.get(`/api/reports/${report.id}/progress`);
+                    const result = response.data;
                     
                     if (result.success && result.data) {
                         const data = result.data;
@@ -80,10 +81,8 @@ export default function ReportList({ userId = 1, onRefresh }) {
         if (!confirm('Are you sure you want to delete this report?')) return;
 
         try {
-            const response = await fetch(`/api/reports/${reportId}`, {
-                method: 'DELETE',
-            });
-            const data = await response.json();
+            const response = await axios.delete(`/api/reports/${reportId}`);
+            const data = response.data;
 
             if (data.success) {
                 setReports(reports.filter(r => r.id !== reportId));
@@ -96,16 +95,33 @@ export default function ReportList({ userId = 1, onRefresh }) {
 
     const handleRetry = async (reportId) => {
         try {
-            const response = await fetch(`/api/reports/${reportId}/retry`, {
-                method: 'POST',
-            });
-            const data = await response.json();
+            const response = await axios.post(`/api/reports/${reportId}/retry`);
+            const data = response.data;
 
             if (data.success) {
                 fetchReports(currentPage);
             }
         } catch (error) {
             console.error('Failed to retry report:', error);
+        }
+    };
+
+    const handleDownload = async (report) => {
+        try {
+            const response = await axios.get(`/api/reports/${report.id}/download`, {
+                responseType: 'blob',
+            });
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', report.file_name || `report-${report.id}.${report.format}`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download report:', error);
         }
     };
 
@@ -147,23 +163,25 @@ export default function ReportList({ userId = 1, onRefresh }) {
             <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
                 <div className="flex justify-between items-center w-full">
                     <div className="text-sm text-gray-700">
-                        Showing <span className="font-medium">{(currentPage - 1) * 15 + 1}</span> to{' '}
-                        <span className="font-medium">{Math.min(currentPage * 15, total)}</span> of{' '}
+                        Showing <span className="font-medium">{(currentPage - 1) * 10 + 1}</span> to{' '}
+                        <span className="font-medium">{Math.min(currentPage * 10, total)}</span> of{' '}
                         <span className="font-medium">{total}</span> results
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={() => fetchReports(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                            className="p-2 text-sm border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                         >
-                            Previous
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
                         </button>
                         {pages.map(page => (
                             <button
                                 key={page}
                                 onClick={() => fetchReports(page)}
-                                className={`px-3 py-1 text-sm border rounded-md ${
+                                className={`w-9 h-9 text-sm border rounded-lg transition-colors ${
                                     page === currentPage 
                                         ? 'bg-blue-600 text-white border-blue-600' 
                                         : 'hover:bg-gray-50'
@@ -175,9 +193,11 @@ export default function ReportList({ userId = 1, onRefresh }) {
                         <button
                             onClick={() => fetchReports(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                            className="p-2 text-sm border rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                         >
-                            Next
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -295,16 +315,15 @@ export default function ReportList({ userId = 1, onRefresh }) {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {report.status === 'completed' && (
-                                            <a
-                                                href={report.download_url}
+                                            <button
+                                                onClick={() => handleDownload(report)}
                                                 className="text-blue-600 hover:text-blue-900 mr-4 inline-flex items-center gap-1"
-                                                download
                                             >
                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                                 </svg>
                                                 Download
-                                            </a>
+                                            </button>
                                         )}
                                         {report.status === 'failed' && (
                                             <button

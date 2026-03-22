@@ -323,4 +323,75 @@ class ReportService
     {
         return ReportFormat::options();
     }
+
+    public function getPreview(ReportType $type, array $filters = [], int $limit = 5): array
+    {
+        $query = $this->buildReportQuery($type, $filters);
+        return $query->limit($limit)->get()->toArray();
+    }
+
+    public function getCount(ReportType $type, array $filters = []): int
+    {
+        $query = $this->buildReportQuery($type, $filters);
+        return $query->count();
+    }
+
+    private function buildReportQuery(ReportType $type, array $filters)
+    {
+        $query = match ($type) {
+            ReportType::SALARY_MASTER => \App\Models\User::query(),
+            ReportType::SALARY_BY_DEPARTMENT => \App\Models\User::query(),
+            ReportType::SALARY_BY_DESIGNATION => \App\Models\User::query(),
+            ReportType::SALARY_BY_LOCATION => \App\Models\User::query(),
+            ReportType::SALARY_MONTHLY_COMPARATIVE => \App\Models\User::query(),
+            ReportType::SALARY_BANK_ADVICE => \App\Models\User::query(),
+            ReportType::ATTENDANCE_DAILY => \App\Models\Attendance::query(),
+            ReportType::ATTENDANCE_MONTHLY => \App\Models\Attendance::query(),
+            ReportType::ATTENDANCE_LATE_TRENDS => \App\Models\Attendance::query(),
+            ReportType::ATTENDANCE_OVERTIME => \App\Models\Attendance::query(),
+            ReportType::LEAVE_BALANCE => \App\Models\LeaveBalance::query(),
+            ReportType::LEAVE_ENCASHMENT => \App\Models\Leave::query(),
+            ReportType::LEAVE_DEPARTMENT_HEATMAP => \App\Models\Leave::query(),
+            ReportType::LEAVE_AVAILED => \App\Models\Leave::query(),
+            ReportType::EMPLOYEE_RECRUITMENT => \App\Models\User::query(),
+            ReportType::EMPLOYEE_ATTRITION => \App\Models\User::query(),
+            ReportType::EMPLOYEE_SERVICE_LENGTH => \App\Models\User::query(),
+            ReportType::EMPLOYEE_PROFILE_EXPORT => \App\Models\User::query(),
+            default => \App\Models\User::query(),
+        };
+
+        $query = $this->applyFilters($query, $type, $filters);
+
+        return $query;
+    }
+
+    private function applyFilters($query, ReportType $type, array $filters)
+    {
+        if (isset($filters['department_ids']) && !empty($filters['department_ids'])) {
+            $query->whereIn('department_id', $filters['department_ids']);
+        }
+
+        if (isset($filters['start_date']) && isset($filters['end_date'])) {
+            if ($type === ReportType::ATTENDANCE_DAILY || $type === ReportType::ATTENDANCE_MONTHLY ||
+                $type === ReportType::ATTENDANCE_LATE_TRENDS || $type === ReportType::ATTENDANCE_OVERTIME) {
+                $query->whereBetween('attendance_date', [$filters['start_date'], $filters['end_date']]);
+            } elseif ($type === ReportType::LEAVE_ENCASHMENT || $type === ReportType::LEAVE_AVAILED) {
+                $query->whereBetween('start_date', [$filters['start_date'], $filters['end_date']]);
+            }
+        }
+
+        if (isset($filters['year'])) {
+            if ($type === ReportType::LEAVE_BALANCE || $type === ReportType::LEAVE_DEPARTMENT_HEATMAP) {
+                $query->where('year', $filters['year']);
+            }
+        }
+
+        if (isset($filters['date'])) {
+            if ($type === ReportType::ATTENDANCE_DAILY) {
+                $query->where('attendance_date', $filters['date']);
+            }
+        }
+
+        return $query;
+    }
 }
