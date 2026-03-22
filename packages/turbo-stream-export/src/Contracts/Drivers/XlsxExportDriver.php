@@ -6,13 +6,22 @@ namespace TurboStreamExport\Contracts\Drivers;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use TurboStreamExport\Contracts\ExportDriverInterface;
+use App\Services\ReportFormatter;
 
 class XlsxExportDriver implements ExportDriverInterface
 {
     private Spreadsheet $spreadsheet;
     private int $currentRow = 1;
     private string $tempFile;
+    private array $numericColumns = [];
+    private array $allRecords = [];
+    private string $reportName = '';
+    private array $filters = [];
+    private int $totalRecords = 0;
 
     public function __construct()
     {
@@ -38,9 +47,26 @@ class XlsxExportDriver implements ExportDriverInterface
         return 'xlsx';
     }
 
+    public function setReportInfo(string $name, array $filters = []): self
+    {
+        $this->reportName = $name;
+        $this->filters = $filters;
+        return $this;
+    }
+
+    public function setNumericColumns(array $columns): self
+    {
+        $this->numericColumns = $columns;
+        return $this;
+    }
+
     public function writeHeader(array $columns, $sheet = null): void
     {
         $sheet = $sheet ?? $this->spreadsheet->getActiveSheet();
+        
+        $this->writeReportHeader($sheet);
+        
+        $this->currentRow = 3;
         
         $headerStyle = new \PhpOffice\PhpSpreadsheet\Style\Fill();
         $headerStyle->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
@@ -48,16 +74,58 @@ class XlsxExportDriver implements ExportDriverInterface
         
         $colIndex = 'A';
         foreach ($columns as $column) {
-            $cell = $colIndex . '1';
-            $sheet->setCellValue($cell, $this->formatHeaderName($column));
+            $cell = $colIndex . $this->currentRow;
+            $sheet->setCellValue($cell, ReportFormatter::formatHeaderName($column));
             $sheet->getStyle($cell)->getFont()->setBold(true);
-            $sheet->getStyle($cell)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
+            $sheet->getStyle($cell)->getFont()->setSize(9);
+            $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID);
             $sheet->getStyle($cell)->getFill()->getStartColor()->setRGB('4472C4');
             $sheet->getStyle($cell)->getFont()->getColor()->setRGB('FFFFFF');
+            $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
             $colIndex++;
         }
         
-        $this->currentRow = 2;
+        $this->currentRow++;
+    }
+    
+    private function writeReportHeader($sheet): void
+    {
+        $sheet->setCellValue("A1", $this->reportName);
+        $sheet->getStyle("A1")->getFont()->setBold(true);
+        $sheet->getStyle("A1")->getFont()->setSize(12);
+        
+        if (!empty($this->filters)) {
+            $filterParts = [];
+            
+            if (isset($this->filters['start_date']) && isset($this->filters['end_date'])) {
+                $startDate = ReportFormatter::formatDate($this->filters['start_date']);
+                $endDate = ReportFormatter::formatDate($this->filters['end_date']);
+                if (!empty($this->filters['start_date']) && !empty($this->filters['end_date'])) {
+                    $filterParts[] = "Date Range: {$startDate} To {$endDate}";
+                }
+            } elseif (isset($this->filters['date'])) {
+                $filterParts[] = "Date: " . ReportFormatter::formatDate($this->filters['date']);
+            }
+            
+            foreach ($this->filters as $key => $value) {
+                if (in_array($key, ['start_date', 'end_date', 'date'])) continue;
+                if (empty($value)) continue;
+                
+                $label = ReportFormatter::formatHeaderName($key);
+                if (is_array($value)) {
+                    $value = implode(', ', $value);
+                }
+                $filterParts[] = "{$label}: {$value}";
+            }
+            
+            if (!empty($filterParts)) {
+                $filterLine = 'Filters: ' . implode(' | ', $filterParts);
+                $sheet->setCellValue("A2", $filterLine);
+                $sheet->getStyle("A2")->getFont()->setSize(9);
+                $sheet->getStyle("A2")->getAlignment()->setWrapText(true);
+            }
+        }
     }
 
     public function writeRow(array $data, $sheet = null): void
@@ -65,8 +133,19 @@ class XlsxExportDriver implements ExportDriverInterface
         $sheet = $sheet ?? $this->spreadsheet->getActiveSheet();
         $colIndex = 'A';
         
-        foreach ($data as $value) {
-            $sheet->setCellValue($colIndex . $this->currentRow, $this->formatValue($value));
+        foreach ($data as $index => $value) {
+            $cell = $colIndex . $this->currentRow;
+            $columnName = $data[$index] ?? '';
+            $isNumeric = ReportFormatter::isNumericColumn($columnName);
+            $sheet->setCellValue($cell, ReportFormatter::formatValue($value, $isNumeric));
+            
+            if ($isNumeric) {
+                $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+            } else {
+                $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+            }
+            $sheet->getStyle($cell)->getFont()->setSize(9);
+            $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
             $colIndex++;
         }
         
@@ -79,17 +158,43 @@ class XlsxExportDriver implements ExportDriverInterface
         
         foreach ($records as $record) {
             $colIndex = 'A';
-            foreach ($columns as $column) {
+            foreach ($columns as $colIndexKey => $column) {
                 $value = data_get($record, $column);
-                $sheet->setCellValue($colIndex . $this->currentRow, $this->formatValue($value));
+                $cell = $colIndex . $this->currentRow;
+                $isNumeric = ReportFormatter::isNumericColumn($column);
+                
+                if ($isNumeric && is_numeric($value)) {
+                    $sheet->setCellValue($cell, floatval($value));
+                    $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0.00');
+                } else {
+                    $sheet->setCellValue($cell, ReportFormatter::formatValue($value, false));
+                }
+                
+                if ($isNumeric) {
+                    $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                } else {
+                    $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                }
+                $sheet->getStyle($cell)->getFont()->setSize(9);
+                $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
                 $colIndex++;
             }
             $this->currentRow++;
+            $this->totalRecords++;
+            $this->allRecords[] = $record;
         }
     }
 
     public function finalize(string $filePath, $handle = null): string
     {
+        $sheet = $this->spreadsheet->getActiveSheet();
+        
+        $this->addGrandTotal($sheet);
+        
+        $this->addFooter($sheet);
+        
+        $this->autosizeColumns($sheet);
+        
         $this->tempFile = tempnam(sys_get_temp_dir(), 'turbo_export_');
         $writer = new Xlsx($this->spreadsheet);
         $writer->save($this->tempFile);
@@ -113,29 +218,52 @@ class XlsxExportDriver implements ExportDriverInterface
         return $this->spreadsheet;
     }
 
-    private function formatHeaderName(string $column): string
+    private function addGrandTotal($sheet): void
     {
-        return ucwords(str_replace(['_', '.'], ' ', $column));
+        if (empty($this->numericColumns)) {
+            return;
+        }
+        
+        foreach ($this->numericColumns as $colIndex => $columnName) {
+            if (!ReportFormatter::isNumericColumn($columnName)) {
+                continue;
+            }
+            
+            $cell = chr(65 + $colIndex) . $this->currentRow;
+            $total = 0;
+            
+            foreach ($this->allRecords as $record) {
+                $value = data_get($record, $columnName);
+                if (is_numeric($value)) {
+                    $total += floatval($value);
+                }
+            }
+            
+            $sheet->setCellValue($cell, $total);
+            $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle($cell)->getFont()->setBold(true);
+            $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID);
+            $sheet->getStyle($cell)->getFill()->getStartColor()->setRGB('E2EFDA');
+            $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        }
     }
 
-    private function formatValue(mixed $value): mixed
+    private function addFooter($sheet): void
     {
-        if (is_null($value)) {
-            return '';
-        }
+        $this->currentRow++;
+        $footerText = ReportFormatter::getFooterText(1, $this->totalRecords);
+        $sheet->setCellValue("A{$this->currentRow}", $footerText);
+        $sheet->getStyle("A{$this->currentRow}")->getFont()->setSize(8);
+        $sheet->getStyle("A{$this->currentRow}")->getFont()->setItalic(true);
+    }
+
+    private function autosizeColumns($sheet): void
+    {
+        $highestColumn = $sheet->getHighestColumn();
+        $highestRow = $sheet->getHighestRow();
         
-        if (is_bool($value)) {
-            return $value ? 'Yes' : 'No';
+        for ($col = 'A'; $col <= $highestColumn; $col++) {
+            $sheet->getColumnDimension($col)->setWidth(15);
         }
-        
-        if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d H:i:s');
-        }
-        
-        if (is_array($value) || is_object($value)) {
-            return json_encode($value);
-        }
-        
-        return $value;
     }
 }

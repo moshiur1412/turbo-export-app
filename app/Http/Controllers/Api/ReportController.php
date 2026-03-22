@@ -270,12 +270,15 @@ class ReportController extends Controller
         }
 
         try {
-            $preview = $this->reportService->getPreview($type, $request->filters ?? [], 5);
+            $filters = $request->filters ?? [];
+            $preview = $this->reportService->getPreview($type, $filters, 5);
+            $formattedFilters = $this->reportService->getFormattedFilters($filters);
             
             return response()->json([
                 'success' => true,
                 'data' => $preview,
-                'total_count' => $this->reportService->getCount($type, $request->filters ?? []),
+                'total_count' => $this->reportService->getCount($type, $filters),
+                'filters' => $formattedFilters,
             ]);
         } catch (\Exception $e) {
             return response()->json([

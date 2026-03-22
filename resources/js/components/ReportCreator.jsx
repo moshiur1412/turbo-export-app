@@ -149,14 +149,7 @@ const getDisplayValue = (key, value, departments, designations, employees, locat
     }
     
     if (keyLower.includes('date') || keyLower.includes('_at')) {
-        try {
-            const date = new Date(value);
-            if (!isNaN(date.getTime())) {
-                return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-            }
-        } catch (e) {
-            return stringValue || '-';
-        }
+        return formatDate(value);
     }
     
     return stringValue || '-';
@@ -189,6 +182,21 @@ const toTitleCase = (str) => {
         .replace(/\b\w/g, c => c.toUpperCase())
         .replace(/Id\b/g, 'ID')
         .replace(/Email\b/g, 'Email');
+};
+
+const formatDate = (date) => {
+    if (!date) return '-';
+    try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return '-';
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const day = d.getDate().toString().padStart(2, '0');
+        const month = months[d.getMonth()];
+        const year = d.getFullYear().toString().slice(-2);
+        return `${day}-${month}-${year}`;
+    } catch (e) {
+        return '-';
+    }
 };
 
 const selectStyles = {
@@ -225,15 +233,34 @@ export default function ReportCreator({ onReportCreated }) {
     const [departments, setDepartments] = useState([]);
     const [designations, setDesignations] = useState([]);
     const [employees, setEmployees] = useState([]);
+    const [selectedDepartmentOptions, setSelectedDepartmentOptions] = useState([]);
+    const [selectedDesignationOptions, setSelectedDesignationOptions] = useState([]);
+    const [selectedEmployeeOptions, setSelectedEmployeeOptions] = useState([]);
     const [locations] = useState(LOCATION_OPTIONS);
-    const [loading, setLoading] = useState(true);
     const [loadingFilters, setLoadingFilters] = useState({ departments: false, designations: false, employees: false });
+    
+    const [departmentPage, setDepartmentPage] = useState(1);
+    const [departmentHasMore, setDepartmentHasMore] = useState(true);
+    const [departmentSearch, setDepartmentSearch] = useState('');
+    const departmentSearchTimeout = useRef(null);
+    
+    const [designationPage, setDesignationPage] = useState(1);
+    const [designationHasMore, setDesignationHasMore] = useState(true);
+    const [designationSearch, setDesignationSearch] = useState('');
+    const designationSearchTimeout = useRef(null);
+    
+    const [employeePage, setEmployeePage] = useState(1);
+    const [employeeHasMore, setEmployeeHasMore] = useState(true);
+    const [employeeSearch, setEmployeeSearch] = useState('');
+    const employeeSearchTimeout = useRef(null);
+    const employeeListRef = useRef(null);
     const [submitting, setSubmitting] = useState(false);
     const [previewing, setPreviewing] = useState(false);
     const [previewData, setPreviewData] = useState(null);
     const [previewTotal, setPreviewTotal] = useState(0);
     const [showPreview, setShowPreview] = useState(false);
     const [error, setError] = useState(null);
+    const [formattedFilters, setFormattedFilters] = useState({});
     const autoPreviewTimeout = useRef(null);
 
     const [formData, setFormData] = useState({
@@ -256,78 +283,168 @@ export default function ReportCreator({ onReportCreated }) {
         leaveTypeIds: [],
     });
 
-    const fetchConfig = useCallback(async () => {
+    const loadDepartments = useCallback(async (search = '', page = 1, append = false) => {
+        if (page === 1) {
+            setLoadingFilters(prev => ({ ...prev, departments: true }));
+        }
         try {
-            const [deptRes] = await Promise.all([
-                axios.get('/api/departments').catch(() => ({ data: { data: [] } })),
-            ]);
-
-            if (deptRes.data.data) {
-                setDepartments(deptRes.data.data.map(d => ({
+            const response = await axios.get('/api/departments', { params: { search, page, per_page: 50 } });
+            let options = [];
+            if (response.data.data) {
+                options = response.data.data.map(d => ({
                     value: d.id,
                     label: d.name,
-                })));
+                }));
             }
+            if (append) {
+                setDepartments(prev => [...prev, ...options]);
+            } else {
+                setDepartments(options);
+            }
+            setDepartmentHasMore(response.data.has_more);
+            setDepartmentPage(page);
+            return options;
         } catch (err) {
-            console.error('Failed to fetch config:', err);
+            console.error('Failed to fetch departments:', err);
+            if (!append) setDepartments([]);
+            return [];
         } finally {
-            setLoading(false);
+            if (page === 1) {
+                setLoadingFilters(prev => ({ ...prev, departments: false }));
+            }
         }
     }, []);
 
-    const fetchDesignations = useCallback(async (search = '') => {
-        setLoadingFilters(prev => ({ ...prev, designations: true }));
+    const loadMoreDepartments = useCallback(async () => {
+        if (!departmentHasMore || loadingFilters.departments) return;
+        const nextPage = departmentPage + 1;
+        await loadDepartments(departmentSearch, nextPage, true);
+    }, [departmentHasMore, departmentPage, departmentSearch, loadingFilters.departments, loadDepartments]);
+
+    const departmentSearchRef = useRef('');
+    const handleDepartmentSearch = useCallback((input) => {
+        departmentSearchRef.current = input;
+        if (departmentSearchTimeout.current) {
+            clearTimeout(departmentSearchTimeout.current);
+        }
+        if (input.length === 0) {
+            loadDepartments('', 1, false);
+            return;
+        }
+        departmentSearchTimeout.current = setTimeout(() => {
+            if (departmentSearchRef.current === input) {
+                loadDepartments(input, 1, false);
+            }
+        }, 150);
+    }, [loadDepartments]);
+
+    const loadDesignations = useCallback(async (search = '', page = 1, append = false) => {
+        if (page === 1) {
+            setLoadingFilters(prev => ({ ...prev, designations: true }));
+        }
         try {
-            const response = await axios.get('/api/designations', { params: { search } });
+            const response = await axios.get('/api/designations', { params: { search, page, per_page: 50 } });
+            let options = [];
             if (response.data.data) {
-                setDesignations(response.data.data.map(d => ({
+                options = response.data.data.map(d => ({
                     value: d.id,
                     label: d.name,
-                })));
-            } else if (response.data) {
-                const dataArray = Array.isArray(response.data) ? response.data : response.data.data || [];
-                setDesignations(dataArray.map(d => ({
-                    value: d.id,
-                    label: d.name || d.label || d.title || d.designation_name || d,
-                })));
+                }));
             }
+            if (append) {
+                setDesignations(prev => [...prev, ...options]);
+            } else {
+                setDesignations(options);
+            }
+            setDesignationHasMore(response.data.has_more);
+            setDesignationPage(page);
+            return options;
         } catch (err) {
             console.error('Failed to fetch designations:', err);
-            setDesignations([]);
+            if (!append) setDesignations([]);
+            return [];
         } finally {
-            setLoadingFilters(prev => ({ ...prev, designations: false }));
+            if (page === 1) {
+                setLoadingFilters(prev => ({ ...prev, designations: false }));
+            }
         }
-    }, []);
+    }, [designations, formData.designationIds]);
 
-    const fetchEmployees = useCallback(async (search = '') => {
-        setLoadingFilters(prev => ({ ...prev, employees: true }));
+    const loadMoreDesignations = useCallback(async () => {
+        if (!designationHasMore || loadingFilters.designations) return;
+        const nextPage = designationPage + 1;
+        await loadDesignations(designationSearch, nextPage, true);
+    }, [designationHasMore, designationPage, designationSearch, loadingFilters.designations, loadDesignations]);
+
+    const designationSearchRef = useRef('');
+    const handleDesignationSearch = useCallback((input) => {
+        designationSearchRef.current = input;
+        if (designationSearchTimeout.current) {
+            clearTimeout(designationSearchTimeout.current);
+        }
+        if (input.length === 0) {
+            loadDesignations('', 1, false);
+            return;
+        }
+        designationSearchTimeout.current = setTimeout(() => {
+            if (designationSearchRef.current === input) {
+                loadDesignations(input, 1, false);
+            }
+        }, 150);
+    }, [loadDesignations]);
+
+    const loadEmployees = useCallback(async (search = '', page = 1, append = false) => {
+        if (page === 1) {
+            setLoadingFilters(prev => ({ ...prev, employees: true }));
+        }
         try {
-            const response = await axios.get('/api/employees', { params: { search } });
+            const response = await axios.get('/api/employees', { params: { search, page, per_page: 50 } });
+            let options = [];
             if (response.data.data) {
-                setEmployees(response.data.data.map(e => ({
+                options = response.data.data.map(e => ({
                     value: e.id,
                     label: `${e.name} (${e.employee_id || e.id})`,
-                })));
-            } else if (response.data) {
-                const dataArray = Array.isArray(response.data) ? response.data : response.data.data || [];
-                setEmployees(dataArray.map(e => ({
-                    value: e.id,
-                    label: e.name ? `${e.name} (${e.employee_id || e.id})` : e.label || e,
-                })));
+                }));
             }
+            if (append) {
+                setEmployees(prev => [...prev, ...options]);
+            } else {
+                setEmployees(options);
+            }
+            setEmployeeHasMore(response.data.has_more);
+            setEmployeePage(page);
+            return options;
         } catch (err) {
             console.error('Failed to fetch employees:', err);
-            setEmployees([]);
+            if (!append) setEmployees([]);
+            return [];
         } finally {
-            setLoadingFilters(prev => ({ ...prev, employees: false }));
+            if (page === 1) {
+                setLoadingFilters(prev => ({ ...prev, employees: false }));
+            }
         }
     }, []);
 
-    useEffect(() => {
-        fetchConfig();
-        fetchDesignations();
-        fetchEmployees();
-    }, [fetchConfig, fetchDesignations, fetchEmployees]);
+    const loadMoreEmployees = useCallback(async () => {
+        if (!employeeHasMore || loadingFilters.employees) return;
+        const nextPage = employeePage + 1;
+        await loadEmployees(employeeSearch, nextPage, true);
+    }, [employeeHasMore, employeePage, employeeSearch, loadingFilters.employees, loadEmployees]);
+
+    const handleEmployeeSearch = useCallback((input) => {
+        if (employeeSearchTimeout.current) {
+            clearTimeout(employeeSearchTimeout.current);
+        }
+        if (input.length === 0) {
+            loadEmployees('', 1, false);
+            return;
+        }
+        employeeSearchTimeout.current = setTimeout(() => {
+            loadEmployees(input, 1, false);
+        }, 300);
+    }, [loadEmployees]);
+
+
 
     const getFilterConfig = (type) => {
         if (!type) return null;
@@ -356,6 +473,9 @@ export default function ReportCreator({ onReportCreated }) {
             includeInactive: false,
             leaveTypeIds: [],
         }));
+        setSelectedDepartmentOptions([]);
+        setSelectedDesignationOptions([]);
+        setSelectedEmployeeOptions([]);
         setShowPreview(false);
         setPreviewData(null);
         if (type) {
@@ -454,6 +574,7 @@ export default function ReportCreator({ onReportCreated }) {
             if (response.data.success) {
                 setPreviewData(response.data.data);
                 setPreviewTotal(response.data.total_count);
+                setFormattedFilters(response.data.filters || {});
                 setShowPreview(true);
             } else {
                 setError(response.data.error || 'Preview failed');
@@ -535,14 +656,6 @@ export default function ReportCreator({ onReportCreated }) {
             }
         };
     }, []);
-
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center py-16">
-                <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-200 border-t-blue-600"></div>
-            </div>
-        );
-    }
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -718,12 +831,28 @@ export default function ReportCreator({ onReportCreated }) {
                                     <Select
                                         isMulti
                                         options={departments}
-                                        value={departments.filter(d => formData.departmentIds.includes(d.value))}
-                                        onChange={(selected) => handleFilterChange('departmentIds', selected ? selected.map(s => s.value) : [])}
-                                        placeholder={departments.length > 0 ? "All Departments" : "No departments available"}
+                                        value={selectedDepartmentOptions}
+                                        onChange={(selected) => {
+                                            setSelectedDepartmentOptions(selected || []);
+                                            handleFilterChange('departmentIds', selected ? selected.map(s => s.value) : []);
+                                        }}
+                                        placeholder={loadingFilters.departments ? "Loading..." : selectedDepartmentOptions.length > 0 ? `${selectedDepartmentOptions.length} selected` : departments.length > 0 ? `${departments.length} departments` : "Search departments..."}
                                         styles={selectStyles}
                                         isSearchable
-                                        isDisabled={departments.length === 0}
+                                        isLoading={loadingFilters.departments}
+                                        onInputChange={(input) => {
+                                            handleDepartmentSearch(input);
+                                            return input;
+                                        }}
+                                        onFocus={() => {
+                                            if (departments.length === 0) {
+                                                loadDepartments('', 1, false);
+                                            }
+                                        }}
+                                        onMenuScrollToBottom={loadMoreDepartments}
+                                        closeMenuOnSelect={false}
+                                        hideSelectedOptions={false}
+                                        backspaceRemovesValue={true}
                                     />
                                 </div>
                             )}
@@ -734,17 +863,28 @@ export default function ReportCreator({ onReportCreated }) {
                                     <Select
                                         isMulti
                                         options={designations}
-                                        value={designations.filter(d => formData.designationIds.includes(d.value))}
-                                        onChange={(selected) => handleFilterChange('designationIds', selected ? selected.map(s => s.value) : [])}
-                                        placeholder={loadingFilters.designations ? "Loading..." : designations.length > 0 ? "All Designations" : "Search designations"}
+                                        value={selectedDesignationOptions}
+                                        onChange={(selected) => {
+                                            setSelectedDesignationOptions(selected || []);
+                                            handleFilterChange('designationIds', selected ? selected.map(s => s.value) : []);
+                                        }}
+                                        placeholder={loadingFilters.designations ? "Loading..." : selectedDesignationOptions.length > 0 ? `${selectedDesignationOptions.length} selected` : designations.length > 0 ? `${designations.length} designations` : "Search designations..."}
                                         styles={selectStyles}
                                         isSearchable
-                                        isDisabled={loadingFilters.designations}
-                                        defaultOptions
-                                        cacheOptions
-                                        loadOptions={(input) => {
-                                            return fetchDesignations(input).then(() => designations);
+                                        isLoading={loadingFilters.designations}
+                                        onInputChange={(input) => {
+                                            handleDesignationSearch(input);
+                                            return input;
                                         }}
+                                        onFocus={() => {
+                                            if (designations.length === 0) {
+                                                loadDesignations('', 1, false);
+                                            }
+                                        }}
+                                        onMenuScrollToBottom={loadMoreDesignations}
+                                        closeMenuOnSelect={false}
+                                        hideSelectedOptions={false}
+                                        backspaceRemovesValue={true}
                                     />
                                 </div>
                             )}
@@ -753,19 +893,30 @@ export default function ReportCreator({ onReportCreated }) {
                                 <div>
                                     <label className="block text-xs font-medium text-gray-600 mb-2">Employees</label>
                                     <Select
+                                        ref={employeeListRef}
                                         isMulti
                                         options={employees}
-                                        value={employees.filter(e => formData.employeeIds.includes(e.value))}
-                                        onChange={(selected) => handleFilterChange('employeeIds', selected ? selected.map(s => s.value) : [])}
-                                        placeholder={loadingFilters.employees ? "Loading..." : employees.length > 0 ? "All Employees" : "Search employees"}
+                                        value={selectedEmployeeOptions}
+                                        onChange={(selected) => {
+                                            setSelectedEmployeeOptions(selected || []);
+                                            handleFilterChange('employeeIds', selected ? selected.map(s => s.value) : []);
+                                        }}
+                                        placeholder={loadingFilters.employees ? "Searching..." : selectedEmployeeOptions.length > 0 ? `${selectedEmployeeOptions.length} selected` : employees.length > 0 ? `${employees.length} employees` : "Search employees..."}
                                         styles={selectStyles}
                                         isSearchable
-                                        isDisabled={loadingFilters.employees}
-                                        defaultOptions
-                                        cacheOptions
-                                        loadOptions={(input) => {
-                                            return fetchEmployees(input).then(() => employees);
+                                        isLoading={loadingFilters.employees}
+                                        onInputChange={(input) => {
+                                            handleEmployeeSearch(input);
                                         }}
+                                        onFocus={() => {
+                                            loadEmployees('', 1, false);
+                                        }}
+                                        onMenuScrollToBottom={loadMoreEmployees}
+                                        closeMenuOnSelect={false}
+                                        hideSelectedOptions={false}
+                                        backspaceRemovesValue={true}
+                                        openMenuOnFocus={true}
+                                        blurInputOnSelect={false}
                                     />
                                 </div>
                             )}
@@ -903,6 +1054,87 @@ export default function ReportCreator({ onReportCreated }) {
                             </button>
                         </div>
                     </div>
+                    
+                    {Object.keys(formattedFilters).length > 0 && (
+                        <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <span className="font-bold text-gray-700">Filters:</span>
+                                {formattedFilters.start_date && formattedFilters.end_date && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Date Range:</span>
+                                        {formattedFilters.start_date} To {formattedFilters.end_date}
+                                    </span>
+                                )}
+                                {formattedFilters.date && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Date:</span>
+                                        {formattedFilters.date}
+                                    </span>
+                                )}
+                                {formattedFilters.year && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Year:</span>
+                                        {formattedFilters.year}
+                                    </span>
+                                )}
+                                {formattedFilters.department && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Department:</span>
+                                        {formattedFilters.department}
+                                    </span>
+                                )}
+                                {formattedFilters.designation && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Designation:</span>
+                                        {formattedFilters.designation}
+                                    </span>
+                                )}
+                                {formattedFilters.employee && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Employee:</span>
+                                        {formattedFilters.employee}
+                                    </span>
+                                )}
+                                {formattedFilters.location && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Location:</span>
+                                        {formattedFilters.location}
+                                    </span>
+                                )}
+                                {formattedFilters.employment_status && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Status:</span>
+                                        {formattedFilters.employment_status}
+                                    </span>
+                                )}
+                                {formattedFilters.gender && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Gender:</span>
+                                        {formattedFilters.gender}
+                                    </span>
+                                )}
+                                {formattedFilters.salary_min && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Min Salary:</span>
+                                        {formattedFilters.salary_min}
+                                    </span>
+                                )}
+                                {formattedFilters.salary_max && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Max Salary:</span>
+                                        {formattedFilters.salary_max}
+                                    </span>
+                                )}
+                                {formattedFilters.leave_type && (
+                                    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                                        <span className="font-semibold">Leave Type:</span>
+                                        {formattedFilters.leave_type}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    
                     <div className="overflow-x-auto max-h-96">
                         <table className="w-full">
                             <thead className="bg-gray-50 sticky top-0">

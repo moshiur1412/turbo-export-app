@@ -10,6 +10,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Services\ReportQueryBuilder;
 
 class ReportService
 {
@@ -326,14 +327,167 @@ class ReportService
 
     public function getPreview(ReportType $type, array $filters = [], int $limit = 5): array
     {
-        $query = $this->buildReportQuery($type, $filters);
-        return $query->limit($limit)->get()->toArray();
+        $queryBuilder = new ReportQueryBuilder($type, $filters);
+        $query = $queryBuilder->buildQuery();
+        $columns = $queryBuilder->getColumns();
+        $records = $query->limit($limit)->get();
+        
+        $formatted = [];
+        foreach ($records as $record) {
+            $row = [];
+            foreach ($columns as $label => $value) {
+                if (is_callable($value)) {
+                    $row[$label] = $value($record);
+                } else {
+                    $row[$label] = data_get($record, $value);
+                }
+            }
+            $formatted[] = $row;
+        }
+        
+        return $formatted;
     }
 
     public function getCount(ReportType $type, array $filters = []): int
     {
-        $query = $this->buildReportQuery($type, $filters);
+        $queryBuilder = new ReportQueryBuilder($type, $filters);
+        $query = $queryBuilder->buildQuery();
         return $query->count();
+    }
+
+    public function getFormattedFilters(array $filters = []): array
+    {
+        $formatted = [];
+        
+        if (isset($filters['start_date']) && isset($filters['end_date'])) {
+            $formatted['start_date'] = ReportFormatter::formatDate($filters['start_date']);
+            $formatted['end_date'] = ReportFormatter::formatDate($filters['end_date']);
+        }
+        
+        if (isset($filters['date'])) {
+            $formatted['date'] = ReportFormatter::formatDate($filters['date']);
+        }
+        
+        if (isset($filters['department_ids']) && !empty($filters['department_ids'])) {
+            try {
+                $departments = \App\Models\Department::whereIn('id', $filters['department_ids'])->pluck('name')->toArray();
+                if (!empty($departments)) {
+                    $formatted['department'] = implode(', ', $departments);
+                } else {
+                    $formatted['department'] = 'Dept ID: ' . implode(', ', $filters['department_ids']);
+                }
+            } catch (\Exception $e) {
+                $formatted['department'] = 'Dept ID: ' . implode(', ', $filters['department_ids']);
+            }
+        }
+        
+        if (isset($filters['designation_ids']) && !empty($filters['designation_ids'])) {
+            try {
+                $designations = \App\Models\Designation::whereIn('id', $filters['designation_ids'])->pluck('name')->toArray();
+                if (!empty($designations)) {
+                    $formatted['designation'] = implode(', ', $designations);
+                } else {
+                    $formatted['designation'] = 'Desig ID: ' . implode(', ', $filters['designation_ids']);
+                }
+            } catch (\Exception $e) {
+                $formatted['designation'] = 'Desig ID: ' . implode(', ', $filters['designation_ids']);
+            }
+        }
+        
+        if (isset($filters['user_ids']) && !empty($filters['user_ids'])) {
+            try {
+                $userIds = array_map('intval', $filters['user_ids']);
+                
+                $users = \App\Models\User::where(function($query) use ($userIds) {
+                    foreach ($userIds as $id) {
+                        $query->orWhere('id', $id);
+                    }
+                })->orWhere(function($query) use ($userIds) {
+                    foreach ($userIds as $id) {
+                        $query->orWhere('employee_id', $id);
+                    }
+                })->pluck('name', 'id')->toArray();
+                
+                if (!empty($users)) {
+                    $names = [];
+                    foreach ($filters['user_ids'] as $userId) {
+                        $intId = intval($userId);
+                        if (isset($users[$intId])) {
+                            $names[] = $users[$intId];
+                        } else {
+                            $names[] = 'User ID: ' . $userId;
+                        }
+                    }
+                    $formatted['employee'] = implode(', ', $names);
+                } else {
+                    $formatted['employee'] = 'User ID: ' . implode(', ', $filters['user_ids']);
+                }
+            } catch (\Exception $e) {
+                $formatted['employee'] = 'User ID: ' . implode(', ', $filters['user_ids']);
+            }
+        }
+        
+        if (isset($filters['location_ids']) && !empty($filters['location_ids'])) {
+            $locationMap = [
+                'head_office' => 'Head Office',
+                'branch_1' => 'Branch 1',
+                'branch_2' => 'Branch 2',
+                'remote' => 'Remote',
+            ];
+            $locations = array_map(function($id) use ($locationMap) {
+                return $locationMap[$id] ?? $id;
+            }, $filters['location_ids']);
+            $formatted['location'] = implode(', ', $locations);
+        }
+        
+        if (isset($filters['employment_status']) && !empty($filters['employment_status'])) {
+            $statusMap = [
+                'active' => 'Active',
+                'probation' => 'Probation',
+                'contract' => 'Contract',
+                'part_time' => 'Part Time',
+                'intern' => 'Intern',
+                'resigned' => 'Resigned',
+                'terminated' => 'Terminated',
+            ];
+            $statuses = array_map(function($s) use ($statusMap) {
+                return $statusMap[$s] ?? ucfirst($s);
+            }, $filters['employment_status']);
+            $formatted['employment_status'] = implode(', ', $statuses);
+        }
+        
+        if (isset($filters['gender']) && !empty($filters['gender'])) {
+            $formatted['gender'] = implode(', ', array_map('ucfirst', $filters['gender']));
+        }
+        
+        if (isset($filters['year'])) {
+            $formatted['year'] = $filters['year'];
+        }
+        
+        if (isset($filters['salary_min'])) {
+            $formatted['salary_min'] = ReportFormatter::bangladeshNumber($filters['salary_min']);
+        }
+        
+        if (isset($filters['salary_max'])) {
+            $formatted['salary_max'] = ReportFormatter::bangladeshNumber($filters['salary_max']);
+        }
+        
+        if (isset($filters['leave_type_ids']) && !empty($filters['leave_type_ids'])) {
+            $leaveTypeMap = [
+                'sick' => 'Sick Leave',
+                'casual' => 'Casual Leave',
+                'earned' => 'Earned Leave',
+                'maternity' => 'Maternity Leave',
+                'paternity' => 'Paternity Leave',
+                'unpaid' => 'Unpaid Leave',
+            ];
+            $leaveTypes = array_map(function($id) use ($leaveTypeMap) {
+                return $leaveTypeMap[$id] ?? $id;
+            }, $filters['leave_type_ids']);
+            $formatted['leave_type'] = implode(', ', $leaveTypes);
+        }
+        
+        return $formatted;
     }
 
     private function buildReportQuery(ReportType $type, array $filters)

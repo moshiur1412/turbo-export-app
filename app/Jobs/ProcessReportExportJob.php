@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\ReportFormat;
 use App\Enums\ReportType;
+use App\Services\ReportFormatter;
 use App\Services\ReportQueryBuilder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -149,6 +150,17 @@ class ProcessReportExportJob implements ShouldQueue
         int $totalRecords,
         int $chunkSize
     ): void {
+        $reportName = $this->type->label();
+        $formattedFilters = $this->getFormattedFiltersForExport();
+        
+        if (method_exists($driver, 'setReportInfo')) {
+            $driver->setReportInfo($reportName, $formattedFilters);
+        }
+        
+        if (method_exists($driver, 'setNumericColumns')) {
+            $driver->setNumericColumns($columnKeys);
+        }
+
         $handle = fopen($fullPath, 'w');
         $driver->writeHeader($columnKeys, $handle);
 
@@ -191,6 +203,17 @@ class ProcessReportExportJob implements ShouldQueue
         int $totalRecords,
         int $chunkSize
     ): void {
+        $reportName = $this->type->label();
+        $formattedFilters = $this->getFormattedFiltersForExport();
+        
+        if (method_exists($driver, 'setReportInfo')) {
+            $driver->setReportInfo($reportName, $formattedFilters);
+        }
+        
+        if (method_exists($driver, 'setNumericColumns')) {
+            $driver->setNumericColumns($columnKeys);
+        }
+
         $driver->writeHeader($columnKeys, null);
 
         $exportedRecords = 0;
@@ -316,6 +339,101 @@ class ProcessReportExportJob implements ShouldQueue
             'report-export:format:' . $this->format->value,
             'user:' . $this->userId,
         ];
+    }
+
+    private function getFormattedFiltersForExport(): array
+    {
+        $filters = [];
+        
+        if (isset($this->filters['department_ids']) && !empty($this->filters['department_ids'])) {
+            try {
+                $departments = \App\Models\Department::whereIn('id', $this->filters['department_ids'])->pluck('name')->toArray();
+                $filters['department'] = implode(', ', $departments);
+            } catch (\Exception $e) {
+                $filters['department'] = implode(', ', $this->filters['department_ids']);
+            }
+        }
+        
+        if (isset($this->filters['designation_ids']) && !empty($this->filters['designation_ids'])) {
+            try {
+                $designations = \App\Models\Designation::whereIn('id', $this->filters['designation_ids'])->pluck('name')->toArray();
+                $filters['designation'] = implode(', ', $designations);
+            } catch (\Exception $e) {
+                $filters['designation'] = implode(', ', $this->filters['designation_ids']);
+            }
+        }
+        
+        if (isset($this->filters['user_ids']) && !empty($this->filters['user_ids'])) {
+            try {
+                $users = \App\Models\User::whereIn('id', $this->filters['user_ids'])->pluck('name')->toArray();
+                $filters['employee'] = implode(', ', $users);
+            } catch (\Exception $e) {
+                $filters['employee'] = implode(', ', $this->filters['user_ids']);
+            }
+        }
+        
+        if (isset($this->filters['location_ids']) && !empty($this->filters['location_ids'])) {
+            $locationMap = [
+                'head_office' => 'Head Office',
+                'branch_1' => 'Branch 1',
+                'branch_2' => 'Branch 2',
+                'remote' => 'Remote',
+            ];
+            $locations = array_map(function($id) use ($locationMap) {
+                return $locationMap[$id] ?? $id;
+            }, $this->filters['location_ids']);
+            $filters['location'] = implode(', ', $locations);
+        }
+        
+        if (isset($this->filters['employment_status']) && !empty($this->filters['employment_status'])) {
+            $statusMap = [
+                'active' => 'Active',
+                'probation' => 'Probation',
+                'contract' => 'Contract',
+                'part_time' => 'Part Time',
+                'intern' => 'Intern',
+                'resigned' => 'Resigned',
+                'terminated' => 'Terminated',
+            ];
+            $statuses = array_map(function($s) use ($statusMap) {
+                return $statusMap[$s] ?? ucfirst($s);
+            }, $this->filters['employment_status']);
+            $filters['employment_status'] = implode(', ', $statuses);
+        }
+        
+        if (isset($this->filters['gender']) && !empty($this->filters['gender'])) {
+            $filters['gender'] = implode(', ', array_map('ucfirst', $this->filters['gender']));
+        }
+        
+        if (isset($this->filters['year'])) {
+            $filters['year'] = $this->filters['year'];
+        }
+        
+        if (isset($this->filters['salary_min'])) {
+            $filters['salary_min'] = ReportFormatter::bangladeshNumber($this->filters['salary_min']);
+        }
+        
+        if (isset($this->filters['salary_max'])) {
+            $filters['salary_max'] = ReportFormatter::bangladeshNumber($this->filters['salary_max']);
+        }
+        
+        if (isset($this->filters['include_inactive'])) {
+            $filters['include_inactive'] = $this->filters['include_inactive'] ? 'Yes' : 'No';
+        }
+        
+        if (isset($this->filters['start_date'])) {
+            $filters['start_date'] = $this->filters['start_date'];
+        }
+        
+        if (isset($this->filters['end_date'])) {
+            $filters['end_date'] = $this->filters['end_date'];
+        }
+        
+        if (isset($this->filters['date'])) {
+            $filters['date'] = $this->filters['date'];
+        }
+        
+        return $filters;
     }
 
     public function failed(\Throwable $exception): void

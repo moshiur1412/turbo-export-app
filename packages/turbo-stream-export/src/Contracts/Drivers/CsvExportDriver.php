@@ -6,11 +6,16 @@ namespace TurboStreamExport\Contracts\Drivers;
 
 use League\Csv\Writer;
 use TurboStreamExport\Contracts\ExportDriverInterface;
+use App\Services\ReportFormatter;
 
 class CsvExportDriver implements ExportDriverInterface
 {
     private ?string $buffer = null;
     private bool $isMemoryMode = false;
+    private array $numericColumns = [];
+    private string $reportName = '';
+    private array $filters = [];
+    private int $totalRecords = 0;
 
     public function getFormat(): string
     {
@@ -27,15 +32,35 @@ class CsvExportDriver implements ExportDriverInterface
         return 'csv';
     }
 
+    public function setReportInfo(string $name, array $filters = []): self
+    {
+        $this->reportName = $name;
+        $this->filters = $filters;
+        return $this;
+    }
+
+    public function setNumericColumns(array $columns): self
+    {
+        $this->numericColumns = $columns;
+        return $this;
+    }
+
     public function writeHeader(array $columns, $handle = null): void
     {
         if ($handle === null) {
             $this->isMemoryMode = true;
             $this->buffer = '';
-            $this->buffer .= fputcsv(null, $columns, ',', '"', '') !== false ? implode(',', $columns) . "\n" : '';
             return;
         }
-        fputcsv($handle, $columns);
+
+        $headerLines = ReportFormatter::buildReportHeader($this->reportName, $this->filters, true);
+        foreach ($headerLines as $line) {
+            fwrite($handle, $this->escapeCsvValue($line) . "\n");
+        }
+        fwrite($handle, "\n");
+
+        $formattedColumns = array_map([ReportFormatter::class, 'formatHeaderName'], $columns);
+        fputcsv($handle, $formattedColumns);
     }
 
     public function writeRow(array $data, $handle = null): void
@@ -49,10 +74,14 @@ class CsvExportDriver implements ExportDriverInterface
 
     public function writeBatch(\Illuminate\Support\Collection $records, array $columns, $handle = null): void
     {
+        $recordCount = $records->count();
+        $this->totalRecords += $recordCount;
+        
         if ($this->isMemoryMode) {
             foreach ($records as $record) {
                 $row = array_map(fn($col) => data_get($record, $col), $columns);
-                $this->buffer .= implode(',', array_map([$this, 'escapeCsvValue'], $row)) . "\n";
+                $formattedRow = $this->formatRow($row, $columns);
+                $this->buffer .= implode(',', array_map([$this, 'escapeCsvValue'], $formattedRow)) . "\n";
             }
             return;
         }
@@ -62,24 +91,38 @@ class CsvExportDriver implements ExportDriverInterface
         })->toArray();
 
         foreach ($data as $row) {
-            fputcsv($handle, $row);
+            $formattedRow = $this->formatRow($row, $columns);
+            fputcsv($handle, $formattedRow);
         }
     }
 
     public function finalize(string $filePath, $handle = null): string
     {
         if ($this->isMemoryMode && $this->buffer !== null) {
+            $content = '';
+            $headerLines = ReportFormatter::buildReportHeader($this->reportName, $this->filters, true);
+            foreach ($headerLines as $line) {
+                $content .= $this->escapeCsvValue($line) . "\n";
+            }
+            $content .= "\n";
+            $content .= $this->buffer;
+
+            $content .= "\n";
+            $content .= ReportFormatter::getFooterText(1, $this->totalRecords);
+
             $directory = dirname($filePath);
             if (!file_exists($directory)) {
                 mkdir($directory, 0755, true);
             }
-            file_put_contents($filePath, $this->buffer);
+            file_put_contents($filePath, $content);
             $this->buffer = null;
             $this->isMemoryMode = false;
             return $filePath;
         }
 
         if ($handle !== null) {
+            fwrite($handle, "\n");
+            fwrite($handle, ReportFormatter::getFooterText(1, $this->totalRecords) . "\n");
             fclose($handle);
         }
 
@@ -98,5 +141,16 @@ class CsvExportDriver implements ExportDriverInterface
             return '"' . str_replace('"', '""', $value) . '"';
         }
         return (string) $value;
+    }
+
+    private function formatRow(array $row, array $columns): array
+    {
+        $formatted = [];
+        foreach ($row as $index => $value) {
+            $columnName = $columns[$index] ?? '';
+            $isNumeric = ReportFormatter::isNumericColumn($columnName);
+            $formatted[] = ReportFormatter::formatValue($value, $isNumeric);
+        }
+        return $formatted;
     }
 }

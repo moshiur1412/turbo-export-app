@@ -37,7 +37,7 @@ export default function DateRangePicker({ startDate, endDate, onChange, label })
 
     const formatDisplayDate = (date) => {
         if (!date) return '';
-        return format(new Date(date), 'MMM d, yyyy');
+        return format(new Date(date), 'd-MMM-yy');
     };
 
     const filteredPresets = PRESETS.filter(preset =>

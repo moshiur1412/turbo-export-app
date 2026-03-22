@@ -19,8 +19,10 @@ export default function SearchableReportType({ value, onChange }) {
     const inputRef = useRef(null);
 
     useEffect(() => {
-        fetchReportTypes();
-    }, []);
+        if (showDropdown && Object.keys(categories).length === 0) {
+            fetchReportTypes();
+        }
+    }, [showDropdown]);
 
     useEffect(() => {
         if (search) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TurboStreamExport\Contracts\Drivers;
 
 use TurboStreamExport\Contracts\ExportDriverInterface;
+use App\Services\ReportFormatter;
 
 class SqlExportDriver implements ExportDriverInterface
 {
@@ -16,6 +17,10 @@ class SqlExportDriver implements ExportDriverInterface
     private string $createStatement = '';
     private $handle;
     private string $filePath = '';
+    private string $reportName = '';
+    private array $filters = [];
+    private array $numericColumns = [];
+    private int $totalRecords = 0;
 
     public function __construct()
     {
@@ -45,6 +50,19 @@ class SqlExportDriver implements ExportDriverInterface
     public function setBatchSize(int $size): self
     {
         $this->batchSize = $size;
+        return $this;
+    }
+
+    public function setReportInfo(string $name, array $filters = []): self
+    {
+        $this->reportName = $name;
+        $this->filters = $filters;
+        return $this;
+    }
+
+    public function setNumericColumns(array $columns): self
+    {
+        $this->numericColumns = $columns;
         return $this;
     }
 
@@ -87,6 +105,7 @@ class SqlExportDriver implements ExportDriverInterface
                 $row[] = data_get($record, $column);
             }
             $this->writeRow($row);
+            $this->totalRecords++;
         }
     }
 
@@ -101,10 +120,33 @@ class SqlExportDriver implements ExportDriverInterface
         
         $handle = fopen($filePath, 'w');
         
+        fwrite($handle, "-- ================================================\n");
         fwrite($handle, "-- TurboStream Export Engine\n");
-        fwrite($handle, "-- Generated: " . date('Y-m-d H:i:s') . "\n");
+        fwrite($handle, "-- Report: " . $this->reportName . "\n");
+        fwrite($handle, "-- Generated: " . ReportFormatter::formatDateTime(now()) . "\n");
         fwrite($handle, "-- Total Records: " . count($this->insertStatements) . "\n");
-        fwrite($handle, "--\n\n");
+        
+        if (!empty($this->filters)) {
+            $filterParts = [];
+            foreach ($this->filters as $key => $value) {
+                if (empty($value)) continue;
+                
+                $label = ReportFormatter::formatHeaderName($key);
+                if (is_array($value)) {
+                    $value = implode(', ', $value);
+                }
+                if (in_array($key, ['start_date', 'end_date', 'date'])) {
+                    $value = ReportFormatter::formatDate($value);
+                }
+                $filterParts[] = "{$label}: {$value}";
+            }
+            
+            if (!empty($filterParts)) {
+                fwrite($handle, "-- Filters: " . implode(' | ', $filterParts) . "\n");
+            }
+        }
+        
+        fwrite($handle, "-- ================================================\n\n");
         
         fwrite($handle, "SET FOREIGN_KEY_CHECKS = 0;\n");
         fwrite($handle, "SET UNIQUE_CHECKS = 0;\n");
@@ -123,7 +165,10 @@ class SqlExportDriver implements ExportDriverInterface
         fwrite($handle, "SET UNIQUE_CHECKS = 1;\n");
         fwrite($handle, "SET autocommit = 1;\n\n");
         
+        fwrite($handle, "-- ================================================\n");
         fwrite($handle, "-- Export completed successfully.\n");
+        fwrite($handle, "-- " . ReportFormatter::getFooterText(1, $this->totalRecords) . "\n");
+        fwrite($handle, "-- ================================================\n");
         
         fclose($handle);
         
@@ -171,7 +216,7 @@ class SqlExportDriver implements ExportDriverInterface
         }
         
         if ($value instanceof \DateTimeInterface) {
-            return "'" . $value->format('Y-m-d H:i:s') . "'";
+            return "'" . ReportFormatter::formatDate($value) . "'";
         }
         
         return "'" . addcslashes((string) $value, "'\\") . "'";

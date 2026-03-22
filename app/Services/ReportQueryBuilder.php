@@ -79,134 +79,392 @@ class ReportQueryBuilder
 
     private function buildSalaryMasterQuery(): Builder
     {
-        return User::with(['salary', 'department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
-            ->when($this->filters['user_ids'] ?? null, fn($q) => $q->whereIn('id', $this->filters['user_ids']))
+        $query = User::with(['salary', 'department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        if (!empty($this->filters['include_inactive'])) {
+            $query->withTrashed();
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['gender']), fn($q) => $q->whereIn('gender', $this->filters['gender']))
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildSalaryByDepartmentQuery(): Builder
     {
-        return User::with(['salary', 'department', 'designation'])
-            ->where('status', 'active')
-            ->whereHas('department')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['salary', 'department', 'designation'])
+            ->whereHas('department');
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildSalaryByDesignationQuery(): Builder
     {
-        return User::with(['salary', 'department', 'designation'])
-            ->where('status', 'active')
-            ->whereHas('designation')
-            ->when($this->filters['designation_ids'] ?? null, fn($q) => $q->whereIn('designation_id', $this->filters['designation_ids']))
+        $query = User::with(['salary', 'department', 'designation'])
+            ->whereHas('designation');
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->orderBy('designation_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildSalaryByLocationQuery(): Builder
     {
-        return User::with(['salary', 'department', 'designation'])
-            ->where('status', 'active')
-            ->whereHas('department', fn($q) => $q->whereNotNull('location'))
-            ->when($this->filters['locations'] ?? null, fn($q) => $q->whereIn('departments.location', $this->filters['locations']))
+        $query = User::with(['salary', 'department', 'designation'])
+            ->whereHas('department', fn($q) => $q->whereNotNull('location'));
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->join('departments', 'users.department_id', '=', 'departments.id')
             ->orderBy('departments.location')
             ->orderBy('users.name')
             ->select('users.*');
+            
+        return $query;
     }
 
     private function buildSalaryComparativeQuery(): Builder
     {
-        return User::with(['salary', 'department', 'designation'])
-            ->where('status', 'active')
+        $query = User::with(['salary', 'department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', $this->filters['user_ids']))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildSalaryBankAdviceQuery(): Builder
     {
-        return User::with(['salary', 'department'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['salary', 'department']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['salary_min']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '>=', $this->filters['salary_min']));
+            })
+            ->when(!empty($this->filters['salary_max']), function($q) {
+                $q->whereHas('salary', fn($sq) => $sq->where('net_salary', '<=', $this->filters['salary_max']));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildAttendanceDailyQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        if (!empty($this->filters['include_inactive'])) {
+            $query->withTrashed();
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildAttendanceMonthlyQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        if (!empty($this->filters['include_inactive'])) {
+            $query->withTrashed();
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildAttendanceLateTrendsQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildAttendanceOvertimeQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildLeaveBalanceQuery(): Builder
     {
         $year = $this->filters['year'] ?? now()->year;
         
-        return User::with(['department', 'designation', 'leaveBalances' => fn($q) => $q->where('year', $year)])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation', 'leaveBalances' => fn($q) => $q->where('year', $year)]);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildLeaveEncashmentQuery(): Builder
     {
-        return User::with(['department', 'designation', 'salary', 'leaveBalances' => fn($q) => $q->where('year', now()->year)])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation', 'salary', 'leaveBalances' => fn($q) => $q->where('year', now()->year)]);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildLeaveHeatmapQuery(): Builder
     {
-        return User::with(['department'])
-            ->where('status', 'active')
-            ->whereNotNull('department_id')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department'])
+            ->whereNotNull('department_id');
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id');
+            
+        return $query;
     }
 
     private function buildLeaveAvailedQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     private function buildRecruitmentQuery(): Builder
@@ -214,11 +472,28 @@ class ReportQueryBuilder
         $startDate = $this->getStartDate();
         $endDate = $this->getEndDate();
         
-        return User::with(['department', 'designation'])
-            ->whereBetween('join_date', [$startDate, $endDate])
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation'])
+            ->whereBetween('join_date', [$startDate, $endDate]);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['gender']), fn($q) => $q->whereIn('gender', $this->filters['gender']))
             ->orderBy('department_id')
             ->orderBy('join_date');
+            
+        return $query;
     }
 
     private function buildAttritionQuery(): Builder
@@ -226,29 +501,75 @@ class ReportQueryBuilder
         $startDate = $this->getStartDate();
         $endDate = $this->getEndDate();
         
-        return User::onlyTrashed()
+        $query = User::onlyTrashed()
             ->with(['department', 'designation'])
-            ->whereBetween('deleted_at', [$startDate, $endDate])
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+            ->whereBetween('deleted_at', [$startDate, $endDate]);
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['gender']), fn($q) => $q->whereIn('gender', $this->filters['gender']))
             ->orderBy('department_id')
             ->orderBy('deleted_at');
+            
+        return $query;
     }
 
     private function buildServiceLengthQuery(): Builder
     {
-        return User::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation']);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
             ->orderBy('join_date', 'asc');
+            
+        return $query;
     }
 
     private function buildEmployeeProfileQuery(): Builder
     {
-        return User::with(['department', 'designation', 'salary', 'leaveBalances' => fn($q) => $q->where('year', now()->year)->latest()->take(1)])
-            ->where('status', 'active')
-            ->when($this->filters['department_ids'] ?? null, fn($q) => $q->whereIn('department_id', $this->filters['department_ids']))
+        $query = User::with(['department', 'designation', 'salary', 'leaveBalances' => fn($q) => $q->where('year', now()->year)->latest()->take(1)]);
+        
+        if (!empty($this->filters['employment_status'])) {
+            $query->whereIn('status', $this->filters['employment_status']);
+        } else {
+            $query->where('status', 'active');
+        }
+        
+        if (!empty($this->filters['include_inactive'])) {
+            $query->withTrashed();
+        }
+        
+        $query
+            ->when(!empty($this->filters['department_ids']), fn($q) => $q->whereIn('department_id', array_map('intval', $this->filters['department_ids'])))
+            ->when(!empty($this->filters['designation_ids']), fn($q) => $q->whereIn('designation_id', array_map('intval', $this->filters['designation_ids'])))
+            ->when(!empty($this->filters['user_ids']), fn($q) => $q->whereIn('id', array_map('intval', $this->filters['user_ids'])))
+            ->when(!empty($this->filters['location_ids']), function($q) {
+                $locations = array_map('trim', $this->filters['location_ids']);
+                $q->whereHas('department', fn($dq) => $dq->whereIn('location', $locations));
+            })
+            ->when(!empty($this->filters['gender']), fn($q) => $q->whereIn('gender', $this->filters['gender']))
             ->orderBy('department_id')
             ->orderBy('name');
+            
+        return $query;
     }
 
     public function getColumns(): array
