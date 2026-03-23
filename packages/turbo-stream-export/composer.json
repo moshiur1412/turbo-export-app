@@ -43,7 +43,8 @@
         "league/csv": "^9.0",
         "predis/predis": "^2.0",
         "phpoffice/phpspreadsheet": "^1.29",
-        "tecnickcom/tcpdf": "^6.6"
+        "tecnickcom/tcpdf": "^6.6",
+        "evosys21/pdflib": "^1.2"
     },
     "require-dev": {
         "pestphp/pest": "^2.0",

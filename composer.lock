@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8000d2d394b17f3c645d88a7c9343393",
+    "content-hash": "132debb9e4f747430dce5257868d816c",
     "packages": [
         {
             "name": "brick/math",
@@ -586,6 +586,62 @@
                 }
             ],
             "time": "2025-03-06T22:45:56+00:00"
+        },
+        {
+            "name": "evosys21/pdflib",
+            "version": "1.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/evosys21/pdflib.git",
+                "reference": "411bddbf6fdbcbe89ff4571c7a3f832c3c4a1908"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/evosys21/pdflib/zipball/411bddbf6fdbcbe89ff4571c7a3f832c3c4a1908",
+                "reference": "411bddbf6fdbcbe89ff4571c7a3f832c3c4a1908",
+                "shasum": ""
+            },
+            "require": {
+                "ext-mbstring": "*",
+                "php": ">=8.0"
+            },
+            "require-dev": {
+                "ext-fileinfo": "*",
+                "ext-json": "*",
+                "phpmd/phpmd": "^2.15",
+                "phpmetrics/phpmetrics": "^2.4",
+                "phpstan/phpstan": "^1.12",
+                "phpunit/phpunit": "^9.0",
+                "setasign/fpdf": "^1.8.6",
+                "setasign/tfpdf": "^1.33.0",
+                "squizlabs/php_codesniffer": "*",
+                "symfony/process": "^5.3",
+                "tecnickcom/tcpdf": "^6.7.0",
+                "vlucas/phpdotenv": "^4.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "EvoSys21\\PdfLib\\": "src/",
+                    "EvoSys21\\PdfLib\\Examples\\": "examples/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "EvoSys21",
+                    "email": "office@evosys21.com"
+                }
+            ],
+            "description": "Fpdf, TCPDF, tFpdf - Advanced Multicell and Table",
+            "support": {
+                "issues": "https://github.com/evosys21/pdflib/issues",
+                "source": "https://github.com/evosys21/pdflib/tree/1.2.0"
+            },
+            "time": "2025-05-27T14:46:16+00:00"
         },
         {
             "name": "ezyang/htmlpurifier",

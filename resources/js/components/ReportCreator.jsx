@@ -72,10 +72,10 @@ const LEAVE_TYPE_OPTIONS = [
 
 const getDisplayValue = (key, value, departments, designations, employees, locations) => {
     if (value === null || value === undefined) return '-';
-    
+
     const keyLower = key.toLowerCase();
     const stringValue = String(value).trim();
-    
+
     if (keyLower.includes('designation') && !keyLower.includes('_name') && !keyLower.includes('name_')) {
         const numValue = typeof value === 'number' ? value : parseInt(stringValue, 10);
         if (!isNaN(numValue)) {
@@ -86,7 +86,7 @@ const getDisplayValue = (key, value, departments, designations, employees, locat
         if (foundByLabel) return foundByLabel.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('department') && !keyLower.includes('_name') && !keyLower.includes('name_')) {
         const numValue = typeof value === 'number' ? value : parseInt(stringValue, 10);
         if (!isNaN(numValue)) {
@@ -97,7 +97,7 @@ const getDisplayValue = (key, value, departments, designations, employees, locat
         if (foundByLabel) return foundByLabel.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('employee') && !keyLower.includes('_name') && !keyLower.includes('name_') && !keyLower.includes('_id')) {
         const numValue = typeof value === 'number' ? value : parseInt(stringValue, 10);
         if (!isNaN(numValue)) {
@@ -108,7 +108,7 @@ const getDisplayValue = (key, value, departments, designations, employees, locat
         if (foundByLabel) return foundByLabel.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('location') && !keyLower.includes('_name') && !keyLower.includes('name_')) {
         const foundByValue = locations.find(l => l.value === stringValue);
         if (foundByValue) return foundByValue.label;
@@ -116,42 +116,42 @@ const getDisplayValue = (key, value, departments, designations, employees, locat
         if (foundByLabel) return foundByLabel.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('status') || keyLower.includes('employment_status')) {
-        const found = EMPLOYMENT_STATUS_OPTIONS.find(s => 
-            s.value.toLowerCase() === stringValue.toLowerCase() || 
+        const found = EMPLOYMENT_STATUS_OPTIONS.find(s =>
+            s.value.toLowerCase() === stringValue.toLowerCase() ||
             s.label.toLowerCase() === stringValue.toLowerCase()
         );
         if (found) return found.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('gender')) {
-        const found = GENDER_OPTIONS.find(g => 
-            g.value.toLowerCase() === stringValue.toLowerCase() || 
+        const found = GENDER_OPTIONS.find(g =>
+            g.value.toLowerCase() === stringValue.toLowerCase() ||
             g.label.toLowerCase() === stringValue.toLowerCase()
         );
         if (found) return found.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('leave_type') || keyLower.includes('leavetype')) {
-        const found = LEAVE_TYPE_OPTIONS.find(l => 
-            l.value.toLowerCase() === stringValue.toLowerCase() || 
+        const found = LEAVE_TYPE_OPTIONS.find(l =>
+            l.value.toLowerCase() === stringValue.toLowerCase() ||
             l.label.toLowerCase() === stringValue.toLowerCase()
         );
         if (found) return found.label;
         return stringValue || '-';
     }
-    
+
     if (keyLower === 'id' || keyLower.endsWith('_id')) {
         return stringValue || '-';
     }
-    
+
     if (keyLower.includes('date') || keyLower.includes('_at')) {
         return formatDate(value);
     }
-    
+
     return stringValue || '-';
 };
 
@@ -173,10 +173,10 @@ const toTitleCase = (str) => {
         'start_date': 'Start Date',
         'end_date': 'End Date',
     };
-    
+
     const lowerStr = str.toLowerCase();
     if (labels[lowerStr]) return labels[lowerStr];
-    
+
     return str
         .replace(/_/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase())
@@ -238,17 +238,17 @@ export default function ReportCreator({ onReportCreated }) {
     const [selectedEmployeeOptions, setSelectedEmployeeOptions] = useState([]);
     const [locations] = useState(LOCATION_OPTIONS);
     const [loadingFilters, setLoadingFilters] = useState({ departments: false, designations: false, employees: false });
-    
+
     const [departmentPage, setDepartmentPage] = useState(1);
     const [departmentHasMore, setDepartmentHasMore] = useState(true);
     const [departmentSearch, setDepartmentSearch] = useState('');
     const departmentSearchTimeout = useRef(null);
-    
+
     const [designationPage, setDesignationPage] = useState(1);
     const [designationHasMore, setDesignationHasMore] = useState(true);
     const [designationSearch, setDesignationSearch] = useState('');
     const designationSearchTimeout = useRef(null);
-    
+
     const [employeePage, setEmployeePage] = useState(1);
     const [employeeHasMore, setEmployeeHasMore] = useState(true);
     const [employeeSearch, setEmployeeSearch] = useState('');
@@ -486,7 +486,7 @@ export default function ReportCreator({ onReportCreated }) {
     const handleFilterChange = (field, value) => {
         const newFormData = { ...formData, [field]: value };
         setFormData(newFormData);
-        
+
         if (autoPreviewTimeout.current) {
             clearTimeout(autoPreviewTimeout.current);
         }
@@ -691,7 +691,7 @@ export default function ReportCreator({ onReportCreated }) {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-1">
                         <label className="block text-xs font-medium text-gray-600 mb-2">Report Type</label>
                         <SearchableReportType
                             value={reportType}
@@ -719,7 +719,7 @@ export default function ReportCreator({ onReportCreated }) {
                             className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                         />
                     </div>
-                </div>
+                
 
                 <div className="mt-6 flex justify-end">
                     <button
@@ -744,6 +744,7 @@ export default function ReportCreator({ onReportCreated }) {
                             </>
                         )}
                     </button>
+                </div>
                 </div>
             </div>
 
@@ -1054,87 +1055,87 @@ export default function ReportCreator({ onReportCreated }) {
                             </button>
                         </div>
                     </div>
-                    
+
                     {Object.keys(formattedFilters).length > 0 && (
                         <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
                             <div className="flex flex-wrap items-center gap-2 text-sm">
                                 <span className="font-bold text-gray-700">Filters:</span>
                                 {formattedFilters.start_date && formattedFilters.end_date && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Date Range:</span>
+                                        <span className="font-bold">Date Range:</span>
                                         {formattedFilters.start_date} To {formattedFilters.end_date}
                                     </span>
                                 )}
                                 {formattedFilters.date && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Date:</span>
+                                        <span className="font-bold">Date:</span>
                                         {formattedFilters.date}
                                     </span>
                                 )}
                                 {formattedFilters.year && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Year:</span>
+                                        <span className="font-bold">Year:</span>
                                         {formattedFilters.year}
                                     </span>
                                 )}
                                 {formattedFilters.department && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Department:</span>
+                                        <span className="font-bold">Department:</span>
                                         {formattedFilters.department}
                                     </span>
                                 )}
                                 {formattedFilters.designation && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Designation:</span>
+                                        <span className="font-bold">Designation:</span>
                                         {formattedFilters.designation}
                                     </span>
                                 )}
                                 {formattedFilters.employee && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Employee:</span>
+                                        <span className="font-bold">Employee:</span>
                                         {formattedFilters.employee}
                                     </span>
                                 )}
                                 {formattedFilters.location && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Location:</span>
+                                        <span className="font-bold">Location:</span>
                                         {formattedFilters.location}
                                     </span>
                                 )}
                                 {formattedFilters.employment_status && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Status:</span>
+                                        <span className="font-bold">Status:</span>
                                         {formattedFilters.employment_status}
                                     </span>
                                 )}
                                 {formattedFilters.gender && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Gender:</span>
+                                        <span className="font-bold">Gender:</span>
                                         {formattedFilters.gender}
                                     </span>
                                 )}
                                 {formattedFilters.salary_min && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Min Salary:</span>
+                                        <span className="font-bold">Min Salary:</span>
                                         {formattedFilters.salary_min}
                                     </span>
                                 )}
                                 {formattedFilters.salary_max && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Max Salary:</span>
+                                        <span className="font-bold">Max Salary:</span>
                                         {formattedFilters.salary_max}
                                     </span>
                                 )}
                                 {formattedFilters.leave_type && (
                                     <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                                        <span className="font-semibold">Leave Type:</span>
+                                        <span className="font-bold">Leave Type:</span>
                                         {formattedFilters.leave_type}
                                     </span>
                                 )}
                             </div>
                         </div>
                     )}
-                    
+
                     <div className="overflow-x-auto max-h-96">
                         <table className="w-full">
                             <thead className="bg-gray-50 sticky top-0">

@@ -22,6 +22,8 @@ TurboStream Export Engine is designed for Laravel applications that need to expo
 - **Multiple Queue Drivers**: Redis (recommended), Database, or Sync
 - **Auto Chunk Sizing**: Automatically adjusts chunk size based on data volume
 - **Laravel Native**: Integrates seamlessly with Laravel 9, 10, and 11
+- **Advanced PDF Reports**: Subtotals, grand totals, colspan/rowspan support
+- **Streaming PDF**: Memory-efficient export for 100M+ records
 
 ## Requirements
 
@@ -36,6 +38,7 @@ TurboStream Export Engine is designed for Laravel applications that need to expo
 |--------|---------|---------|
 | XLSX | PhpSpreadsheet | Included |
 | PDF | TCPDF | Included |
+| PDF (Advanced) | evosys21/pdflib | Included |
 | DOCX | PhpWord | Included |
 | CSV | League CSV | Included |
 
@@ -139,7 +142,11 @@ $downloadUrl = ExportFacade::getDownloadUrl($exportId);
 ### PDF
 - Professional document formatting
 - Header/footer with page numbers
-- Best for print-ready reports
+- Memory efficient (garbage collection every 1000 rows)
+- Optional: Subtotals, grand totals, colspan/rowspan support
+- Use `setGroupBy()` to enable subtotals
+- Use `addCustomRow()` for custom headers with colspan
+- Best for all report sizes (100M+ records supported)
 
 ### DOCX (Word)
 - Table-formatted output
@@ -246,6 +253,274 @@ ExportFacade::listExports(int $limit = 10): array;
 ```php
 ExportFacade::deleteExport(string $exportId): bool;
 ```
+
+## Advanced PDF Reports
+
+One unified PDF driver handles all use cases:
+
+| Feature | Method | Description |
+|---------|--------|-------------|
+| Simple PDF | (default) | Basic table with headers and data |
+| Subtotals | `setGroupBy()` | Auto-subtotals when group changes |
+| Grand Total | (auto) | Final total at end of report |
+| Colspan | `addCustomRow()` | Custom rows spanning columns |
+| 100M+ Records | (auto) | Memory efficient with GC every 1000 rows |
+
+### Using the PDF Driver
+
+```php
+use TurboStreamExport\Contracts\Drivers\PdfExportDriver;
+
+$driver = new PdfExportDriver();
+
+// Simple report
+$driver->setReportInfo('Employee Report', ['status' => 'active']);
+$columns = ['id', 'name', 'salary'];
+$driver->writeHeader($columns);
+foreach ($employees as $e) {
+    $driver->writeRow([$e->id, $e->name, $e->salary]);
+}
+$driver->finalize($filePath);
+```
+
+### PDF with Subtotals
+
+```php
+use TurboStreamExport\Contracts\Drivers\PdfExportDriver;
+
+$driver = new PdfExportDriver();
+$driver->setReportInfo('Department Salary Report', [
+    'start_date' => '2021-01-01',
+    'end_date' => '2026-03-31',
+    'year' => 2026
+]);
+
+// Enable automatic subtotals by department
+$driver->setGroupBy('department');
+
+// Define columns
+$columns = [
+    'id', 
+    'employee_name', 
+    'department', 
+    'basic_salary', 
+    'house_rent', 
+    'medical', 
+    'gross_salary', 
+    'deductions', 
+    'net_salary'
+];
+$driver->setNumericColumns(['basic_salary', 'house_rent', 'medical', 'gross_salary', 'deductions', 'net_salary']);
+
+// Write header
+$driver->writeHeader($columns);
+
+// Write data rows
+foreach ($employees as $employee) {
+    $driver->writeRow([
+        $employee->id,
+        $employee->name,
+        $employee->department,
+        $employee->basic_salary,
+        $employee->house_rent,
+        $employee->medical,
+        $employee->gross_salary,
+        $employee->deductions,
+        $employee->net_salary,
+    ]);
+}
+
+// Add custom section header with colspan
+$driver->addCustomRow([
+    0 => [
+        'TEXT' => '★ Report Summary - Last 5 Years Financial Data ★',
+        'COLSPAN' => 9,
+        'STYLE' => 'subtotal',
+        'FONT_WEIGHT' => 'B',
+        'TEXT_ALIGN' => 'C',
+        'BACKGROUND_COLOR' => [68, 114, 196],
+    ]
+]);
+
+// Grand total added automatically at end
+
+// Finalize and save
+$filePath = storage_path('app/exports/salary_report.pdf');
+$driver->finalize($filePath);
+```
+
+### Methods Reference
+
+#### setReportInfo(string $name, array $filters = [])
+
+Set the report title and filters to be displayed.
+
+```php
+$driver->setReportInfo('Monthly Sales Report', [
+    'start_date' => '2026-01-01',
+    'end_date' => '2026-03-31',
+    'region' => 'Dhaka'
+]);
+```
+
+#### setGroupBy(string $column)
+
+Enable automatic subtotals when a column value changes.
+
+```php
+// Subtotals will be added automatically when department changes
+$driver->setGroupBy('department');
+
+// Can also group by year, category, region, etc.
+$driver->setGroupBy('year');
+```
+
+#### setNumericColumns(array $columns)
+
+Define which columns contain numeric values (for formatting).
+
+```php
+$driver->setNumericColumns([
+    'basic_salary', 
+    'house_rent', 
+    'gross_salary', 
+    'net_salary'
+]);
+```
+
+#### addCustomRow(array $cellData)
+
+Add a custom row with full control over each cell.
+
+```php
+// Section header spanning all columns
+$driver->addCustomRow([
+    0 => [
+        'TEXT' => 'Quarterly Summary - Q1 2026',
+        'COLSPAN' => 8,
+        'STYLE' => 'subtotal',
+        'FONT_WEIGHT' => 'B',
+        'TEXT_ALIGN' => 'C',
+    ]
+]);
+
+// Custom row with specific cell values
+$driver->addCustomRow([
+    0 => ['TEXT' => 'Section A', 'STYLE' => 'header'],
+    1 => ['TEXT' => '', 'STYLE' => 'header'],
+    2 => ['TEXT' => 'Total Amount', 'STYLE' => 'header', 'TEXT_ALIGN' => 'R'],
+    3 => ['TEXT' => '1,234,567', 'STYLE' => 'subtotal', 'TEXT_ALIGN' => 'R'],
+    4 => ['TEXT' => '', 'STYLE' => 'header'],
+]);
+```
+
+#### addColspanRow(array $data, int $colspan, string $text, string $style = 'subtotal')
+
+Add a row with a cell spanning multiple columns.
+
+```php
+// Create a row where first 3 columns are merged
+$driver->addColspanRow(
+    ['', '', '', 'Value 1', 'Value 2'],  // Cell data
+    3,                                     // Span 3 columns
+    'Merged Header Text',                   // Text for merged cell
+    'subtotal'                             // Style
+);
+```
+
+#### addEmptyRow()
+
+Add a blank row for visual separation.
+
+```php
+$driver->addEmptyRow();
+```
+
+### Cell Configuration Options
+
+Each cell in `addCustomRow()` supports these options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| TEXT | string | Cell text content |
+| COLSPAN | integer | Number of columns to span |
+| ROWSPAN | integer | Number of rows to span |
+| STYLE | string | Style name (header, body, subtotal, grandtotal) |
+| TEXT_ALIGN | string | Alignment: L, R, C |
+| VERTICAL_ALIGN | string | Vertical: T, M, B |
+| FONT_WEIGHT | string | 'B' for bold |
+| FONT_SIZE | integer | Font size in points |
+| TEXT_COLOR | array | RGB [R, G, B] |
+| BACKGROUND_COLOR | array | RGB [R, G, B] |
+| BORDER_SIZE | float | Border width |
+| PADDING_TOP | integer | Top padding |
+| PADDING_BOTTOM | integer | Bottom padding |
+
+### Example: Financial Report with All Features
+
+```php
+use TurboStreamExport\Contracts\Drivers\AdvancedPdfReportDriver;
+
+$driver = new AdvancedPdfReportDriver();
+$driver->setReportInfo('Annual Financial Report 2021-2026', [
+    'start_date' => '2021-01-01',
+    'end_date' => '2026-03-31',
+    'company' => 'ABC Corporation'
+]);
+
+// Group by department for subtotals
+$driver->setGroupBy('department');
+
+// Define columns with numeric ones
+$columns = ['id', 'employee', 'department', 'year', 'basic', 'allowances', 'gross', 'tax', 'net'];
+$driver->setNumericColumns(['basic', 'allowances', 'gross', 'tax', 'net']);
+
+// Write header
+$driver->writeHeader($columns);
+
+// Data by year and department
+$years = [2021, 2022, 2023, 2024, 2025, 2026];
+$departments = ['HR', 'IT', 'Finance', 'Operations', 'Marketing'];
+
+foreach ($years as $year) {
+    // Year header with colspan
+    $driver->addCustomRow([
+        0 => [
+            'TEXT' => "═══ YEAR $year ═══",
+            'COLSPAN' => 9,
+            'STYLE' => 'subtotal',
+            'FONT_WEIGHT' => 'B',
+            'TEXT_ALIGN' => 'C',
+            'BACKGROUND_COLOR' => [52, 152, 219],
+        ]
+    ]);
+    
+    foreach ($departments as $dept) {
+        // Write employee rows (subtotals added automatically when department changes)
+        foreach ($employees as $emp) {
+            if ($emp->department === $dept && $emp->year === $year) {
+                $driver->writeRow([
+                    $emp->id,
+                    $emp->name,
+                    $emp->department,
+                    $emp->year,
+                    $emp->basic,
+                    $emp->allowances,
+                    $emp->gross,
+                    $emp->tax,
+                    $emp->net,
+                ]);
+            }
+        }
+    }
+}
+
+// Grand total row added automatically at the end
+$filePath = storage_path('app/exports/financial_report.pdf');
+$driver->finalize($filePath);
+```
+
+
 
 ## Configuration
 
@@ -480,7 +755,7 @@ turbostream/export-engine/
 │   │   └── Drivers/
 │   │       ├── CsvExportDriver.php
 │   │       ├── XlsxExportDriver.php
-│   │       ├── PdfExportDriver.php
+│   │       ├── PdfExportDriver.php       # Unified: simple, subtotals, colspan, 100M+ records
 │   │       ├── DocxExportDriver.php
 │   │       └── SqlExportDriver.php
 │   ├── Facades/

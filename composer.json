@@ -6,14 +6,15 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "evosys21/pdflib": "^1.2",
         "guzzlehttp/guzzle": "^7.8",
         "laravel/framework": "^11.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "league/csv": "^9.15",
-        "predis/predis": "*",
         "phpoffice/phpspreadsheet": "^1.29",
         "phpoffice/phpword": "^1.1",
+        "predis/predis": "*",
         "tecnickcom/tcpdf": "^6.6"
     },
     "require-dev": {

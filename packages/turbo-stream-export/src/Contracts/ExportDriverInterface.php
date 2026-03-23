@@ -21,4 +21,6 @@ interface ExportDriverInterface
     public function writeBatch(Collection $records, array $columns, $handle = null): void;
 
     public function finalize(string $filePath, $handle = null): string;
+
+    public function setReportInfo(string $name, array $filters = []): self;
 }

@@ -71,6 +71,8 @@ class ExportService
 
         $this->updateProgress($exportId, 0, $totalRecords, 'processing', null, $filters);
 
+        $driver->setReportInfo($filename, $filters);
+
         if ($format === 'csv' || $format === 'sql') {
             $filePath = $this->processStreamingExport(
                 $exportId,
