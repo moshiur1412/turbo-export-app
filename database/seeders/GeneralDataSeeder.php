@@ -9,6 +9,7 @@ use App\Models\Leave;
 use App\Models\LeaveBalance;
 use App\Models\Salary;
 use App\Models\User;
+use App\Models\UserAdditionalInformation;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class GeneralDataSeeder extends Seeder
     protected array $config = [];
     protected int $chunkSize;
     protected ?object $output = null;
+    protected array $timings = [];
 
     public function configure(array $config, ?object $output = null): self
     {
@@ -77,21 +79,40 @@ class GeneralDataSeeder extends Seeder
         $this->loadScaleConfig($scale);
 
         $this->printHeader($scale);
-        $this->generateBaseData();
+        
+        $this->timing('departments_designations', fn() => $this->generateDepartmentsAndDesignations());
+        $this->timing('users + salaries', fn() => $this->generateUsersAndSalaries());
+        
+        if ($this->shouldGenerate('additional_info')) {
+            $this->timing('additional_info', fn() => $this->generateUserAdditionalInformation());
+        }
         
         if ($this->shouldGenerate('attendance')) {
-            $this->generateAttendanceData();
+            $this->timing('attendance', fn() => $this->generateAttendanceData());
         }
         
         if ($this->shouldGenerate('leaves')) {
-            $this->generateLeaveData();
+            $this->timing('leaves', fn() => $this->generateLeaveData());
         }
         
         if ($this->shouldGenerate('balances')) {
-            $this->generateLeaveBalances();
+            $this->timing('balances', fn() => $this->generateLeaveBalances());
         }
         
         $this->printSummary();
+    }
+
+    public function getTimings(): array
+    {
+        return $this->timings;
+    }
+
+    protected function timing(string $name, callable $callback): void
+    {
+        $start = microtime(true);
+        $callback();
+        $end = microtime(true);
+        $this->timings[$name] = round($end - $start, 2);
     }
 
     private function loadScaleConfig(string $scale): void
@@ -163,11 +184,12 @@ class GeneralDataSeeder extends Seeder
 
     private function generateBaseData(): void
     {
-        Schema::disableForeignKeyConstraints();
-        
-        $this->disableKeys('users');
-        $this->disableKeys('salaries');
-        
+        $this->generateDepartmentsAndDesignations();
+        $this->generateUsersAndSalaries();
+    }
+
+    private function generateDepartmentsAndDesignations(): void
+    {
         $departments = $this->getDepartments();
         $designations = $this->getDesignations();
         
@@ -178,7 +200,18 @@ class GeneralDataSeeder extends Seeder
         $totalDesigs = Designation::count();
         
         $this->info("Created {$totalDepts} departments, {$totalDesigs} designations");
+    }
 
+    private function generateUsersAndSalaries(): void
+    {
+        Schema::disableForeignKeyConstraints();
+        
+        DB::statement('SET UNIQUE_CHECKS=0');
+        $this->disableKeys('users');
+        $this->disableKeys('salaries');
+        
+        $totalDepts = Department::count();
+        $totalDesigs = Designation::count();
         $totalEmployees = $this->config['employees'];
         $hashedPassword = bcrypt('password');
         $now = now()->format('Y-m-d H:i:s');
@@ -187,7 +220,7 @@ class GeneralDataSeeder extends Seeder
         
         $salariesBatch = [];
         $usersBatch = [];
-        $batchSize = 100;
+        $batchSize = 500;
         
         for ($num = 1; $num <= $totalEmployees; $num++) {
             $basicSalary = rand(20000, 150000);
@@ -248,9 +281,67 @@ class GeneralDataSeeder extends Seeder
         
         $this->enableKeys('users');
         $this->enableKeys('salaries');
+        DB::statement('SET UNIQUE_CHECKS=1');
         Schema::enableForeignKeyConstraints();
         
         $this->info("✅ Created " . number_format(User::count()) . " employees");
+    }
+
+    private function generateUserAdditionalInformation(): void
+    {
+        Schema::disableForeignKeyConstraints();
+        DB::statement('SET UNIQUE_CHECKS=0');
+        $this->disableKeys('user_details');
+        
+        $totalEmployees = User::count();
+        $now = now()->format('Y-m-d H:i:s');
+        
+        $genders = ['male', 'female', 'other'];
+        $cities = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose'];
+        $streets = ['Main St', 'Oak Ave', 'Pine Rd', 'Maple Dr', 'Cedar Ln', 'Elm St', 'Park Ave', 'Lake Dr', 'Hill Rd', 'Forest Way'];
+        
+        $bar = $this->createProgressBar($totalEmployees);
+        
+        $values = [];
+        $batchSize = 500;
+        $insertedCount = 0;
+        
+        for ($userId = 1; $userId <= $totalEmployees; $userId++) {
+            $gender = $genders[array_rand($genders)];
+            $phone = '+1' . rand(2000000000, 9999999999);
+            $streetNum = rand(100, 9999);
+            $street = $streets[array_rand($streets)];
+            $city = $cities[array_rand($cities)];
+            $state = strtoupper(chr(rand(65, 90))) . chr(rand(65, 90));
+            $zip = rand(10000, 99999);
+            $address = "{$streetNum} {$street}, {$city}, {$state} {$zip}, USA";
+            
+            $values[] = "({$userId}, '{$gender}', '{$phone}', '{$address}', '{$now}', '{$now}')";
+            
+            if (count($values) >= $batchSize) {
+                $sql = "INSERT INTO user_details (user_id, gender, phone, address, created_at, updated_at) VALUES " . implode(', ', $values);
+                DB::statement($sql);
+                $insertedCount += $batchSize;
+                $bar->advance($batchSize);
+                $values = [];
+                
+                gc_collect_cycles();
+            }
+        }
+        
+        if (!empty($values)) {
+            $sql = "INSERT INTO user_details (user_id, gender, phone, address, created_at, updated_at) VALUES " . implode(', ', $values);
+            DB::statement($sql);
+            $bar->advance(count($values));
+        }
+        
+        $bar->finish();
+        $this->info('');
+        $this->info('✅ User Additional Info: ' . number_format(UserAdditionalInformation::count()) . ' records');
+        
+        $this->enableKeys('user_details');
+        DB::statement('SET UNIQUE_CHECKS=1');
+        Schema::enableForeignKeyConstraints();
     }
 
     private function generateSalary(float $basicSalary): array
@@ -283,6 +374,8 @@ class GeneralDataSeeder extends Seeder
 
     private function generateAttendanceData(): void
     {
+        Schema::disableForeignKeyConstraints();
+        DB::statement('SET UNIQUE_CHECKS=0');
         $this->disableKeys('attendances');
         
         $totalEmployees = User::count();
@@ -356,10 +449,14 @@ class GeneralDataSeeder extends Seeder
         $this->info('✅ Attendance: ' . number_format(Attendance::count()) . ' records');
         
         $this->enableKeys('attendances');
+        DB::statement('SET UNIQUE_CHECKS=1');
+        Schema::enableForeignKeyConstraints();
     }
 
     private function generateLeaveData(): void
     {
+        Schema::disableForeignKeyConstraints();
+        DB::statement('SET UNIQUE_CHECKS=0');
         $this->disableKeys('leaves');
         
         $totalEmployees = User::count();
@@ -414,10 +511,14 @@ class GeneralDataSeeder extends Seeder
         $this->info('✅ Leave records: ' . number_format(Leave::count()));
         
         $this->enableKeys('leaves');
+        DB::statement('SET UNIQUE_CHECKS=1');
+        Schema::enableForeignKeyConstraints();
     }
 
     private function generateLeaveBalances(): void
     {
+        Schema::disableForeignKeyConstraints();
+        DB::statement('SET UNIQUE_CHECKS=0');
         $this->disableKeys('leave_balances');
         
         $totalEmployees = User::count();
@@ -467,6 +568,8 @@ class GeneralDataSeeder extends Seeder
         $this->info('✅ Leave balances: ' . number_format(LeaveBalance::count()));
         
         $this->enableKeys('leave_balances');
+        DB::statement('SET UNIQUE_CHECKS=1');
+        Schema::enableForeignKeyConstraints();
     }
 
     private function disableKeys(string $table): void
@@ -481,6 +584,26 @@ class GeneralDataSeeder extends Seeder
     {
         try {
             DB::statement("ALTER TABLE {$table} ENABLE KEYS");
+        } catch (\Exception $e) {
+        }
+    }
+
+    private function disableKeysIfExists(string $table): void
+    {
+        try {
+            if (Schema::hasTable($table)) {
+                DB::statement("ALTER TABLE {$table} DISABLE KEYS");
+            }
+        } catch (\Exception $e) {
+        }
+    }
+
+    private function enableKeysIfExists(string $table): void
+    {
+        try {
+            if (Schema::hasTable($table)) {
+                DB::statement("ALTER TABLE {$table} ENABLE KEYS");
+            }
         } catch (\Exception $e) {
         }
     }

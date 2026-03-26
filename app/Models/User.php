@@ -16,7 +16,6 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'phone',
         'designation_id',
         'department_id',
         'salary_id',
@@ -63,5 +62,10 @@ class User extends Authenticatable
     public function leaves()
     {
         return $this->hasMany(Leave::class);
+    }
+
+    public function additionalInformation()
+    {
+        return $this->hasOne(UserAdditionalInformation::class);
     }
 }

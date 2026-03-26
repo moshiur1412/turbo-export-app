@@ -10,17 +10,17 @@ use Illuminate\Support\Facades\Schema;
 class FreshSeed extends Command
 {
     protected $signature = 'db:fresh-seed 
-                            {--scale=medium : Data scale (small|medium|large|xlarge|xxlarge)}
-                            {--seed : Run the seeder}
-                            {--seeder : The seeder class to use (defaults to GeneralDataSeeder)}
+                            {--scale=small : Data scale (small|medium|large|xlarge|xxlarge)}
+                            {--seeder=GeneralDataSeeder : The seeder class to use}
                             {--chunk=10000 : Chunk size for batch inserts}
                             {--skip-attendance : Skip attendance data}
                             {--skip-leaves : Skip leave data}
                             {--skip-balances : Skip leave balance data}
-                            {--force : Force the operation without confirmation}';
+                            {--no-seed : Skip seeding}';
 
     protected $description = 'Drop all tables and re-run migrations with optional data seeding';
 
+    private array $timings = [];
     private array $scaleDescriptions = [
         'small' => '~200K records (1K employees, 3 months attendance)',
         'medium' => '~2M records (10K employees, 6 months attendance)',
@@ -29,12 +29,18 @@ class FreshSeed extends Command
         'xxlarge' => '~300M+ records (200K employees, 60 months attendance)',
     ];
 
+    private array $estimatedTimes = [
+        'small' => '30-60 seconds',
+        'medium' => '3-5 minutes',
+        'large' => '15-30 minutes',
+        'xlarge' => '45-90 minutes',
+        'xxlarge' => '2-3 hours',
+    ];
+
     public function handle(): int
     {
-        ini_set('memory_limit', '512M');
-        
         $scale = $this->option('scale');
-        $runSeed = $this->option('seed');
+        $runSeed = !$this->option('no-seed');
         $seederOption = $this->option('seeder');
         $seederClass = $seederOption 
             ? 'Database\\Seeders\\' . $seederOption 
@@ -51,6 +57,7 @@ class FreshSeed extends Command
         $this->info('========================================');
         $this->info("Scale: {$scale}");
         $this->info("Description: {$this->scaleDescriptions[$scale]}");
+        $this->info("Estimated time: {$this->estimatedTimes[$scale]}");
         $this->info("Seeder: {$seederClass}");
         $this->info("Chunk size: " . number_format($chunkSize));
         
@@ -65,9 +72,9 @@ class FreshSeed extends Command
         }
         $this->info('========================================');
 
-        if (!$this->option('force') && !$this->confirm('This will drop all existing tables. Continue?', false)) {
+        if (!$this->confirm('Do you want to proceed with this operation?', true)) {
             $this->info('Operation cancelled.');
-            return self::FAILURE;
+            return self::SUCCESS;
         }
 
         $startTime = microtime(true);
@@ -124,6 +131,10 @@ class FreshSeed extends Command
         }
 
         $seeder->run();
+
+        if (method_exists($seeder, 'getTimings')) {
+            $this->timings = $seeder->getTimings();
+        }
     }
 
     private function formatDuration(int $seconds): string
@@ -152,14 +163,33 @@ class FreshSeed extends Command
             'salaries' => DB::table('salaries')->count(),
             'departments' => DB::table('departments')->count(),
             'designations' => DB::table('designations')->count(),
+            'user_details' => DB::table('user_details')->count(),
             'attendances' => DB::table('attendances')->count(),
             'leaves' => DB::table('leaves')->count(),
             'leave_balances' => DB::table('leave_balances')->count(),
         ];
 
-        $this->table(
-            ['Table', 'Records'],
-            collect($tables)->map(fn($count, $table) => [$table, number_format($count)])->toArray()
-        );
+        $tableToTiming = [
+            'departments' => 'departments_designations',
+            'designations' => 'departments_designations',
+            'users' => 'users + salaries',
+            'salaries' => 'users + salaries',
+            'user_details' => 'additional_info',
+            'attendances' => 'attendance',
+            'leaves' => 'leaves',
+            'leave_balances' => 'balances',
+        ];
+
+        $rows = [];
+        foreach ($tables as $table => $count) {
+            $timingKey = $tableToTiming[$table] ?? null;
+            $time = $timingKey && isset($this->timings[$timingKey]) 
+                ? $this->formatDuration((int)$this->timings[$timingKey]) 
+                : '-';
+            $rows[] = [$table, number_format($count), $time];
+        }
+
+        $headers = ['Table', 'Records', 'Time'];
+        $this->table($headers, $rows);
     }
 }

@@ -84,6 +84,171 @@ php artisan migrate
 php artisan queue:work redis --queue=exports
 ```
 
+## Database Seeding
+
+### Seeders Overview
+
+This application includes several seeders for populating test data:
+
+| Seeder | Description | Records Created |
+|--------|-------------|-----------------|
+| `UserSeeder` | Basic user accounts | 2 users |
+| `DepartmentSeeder` | Departments (auto via GeneralDataSeeder) | 100+ departments |
+| `DesignationSeeder` | Job titles (auto via GeneralDataSeeder) | 100+ designations |
+| `GeneralDataSeeder` | Large-scale test data | 1K - 200K employees |
+
+### Running Seeders
+
+#### Basic Seeding (Recommended for development)
+```bash
+php artisan db:seed
+```
+This runs `DatabaseSeeder` which includes:
+- `UserSeeder` - Creates admin and demo users with additional info (gender, phone, address)
+
+> **Note**: By default, only basic users are created. Use `GeneralDataSeeder` explicitly for large-scale data.
+
+#### Large-Scale Data Generation
+
+The `GeneralDataSeeder` generates realistic test data at various scales:
+
+```bash
+php artisan db:seed --class=GeneralDataSeeder
+```
+
+**Available Scales:**
+
+| Scale | Employees | Attendance Months | Total Records | Est. Time |
+|-------|-----------|-------------------|---------------|-----------|
+| `small` | 1,000 | 3 | ~200K | 30-60 sec |
+| `medium` | 10,000 | 6 | ~2M | 3-5 min |
+| `large` | 50,000 | 24 | ~30M | 15-30 min |
+| `xlarge` | 100,000 | 60 | ~150M | 45-90 min |
+| `xxlarge` | 200,000 | 60 | ~300M+ | 2-3 hours |
+
+#### Selecting Scale
+
+```bash
+# Small scale (~200K records)
+php artisan db:seed --class=GeneralDataSeeder --scale=small
+
+# Medium scale (~2M records) - default
+php artisan db:seed --class=GeneralDataSeeder --scale=medium
+
+# Large scale (~30M records)
+php artisan db:seed --class=GeneralDataSeeder --scale=large
+
+# Extra large (~150M records)
+php artisan db:seed --class=GeneralDataSeeder --scale=xlarge
+
+# Extreme (~300M+ records)
+php artisan db:seed --class=GeneralDataSeeder --scale=xxlarge
+```
+
+#### Selective Data Generation
+
+Skip specific data types:
+
+```bash
+php artisan db:seed --class=GeneralDataSeeder \
+    --scale=medium \
+    --skip=attendance,leaves
+```
+
+Available skip options: `attendance`, `leaves`, `balances`
+
+#### Custom Configuration
+
+```bash
+php artisan db:seed --class=GeneralDataSeeder \
+    --scale=small \
+    --chunk-size=5000
+```
+
+### Seeded Users
+
+After running seeders, you can login with:
+
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@example.com` | `password` | Admin |
+| `employee1@example.com` | `password` | Demo Employee |
+
+### User Additional Information
+
+Users have additional information stored in `user_details` table:
+
+- `gender` - male, female, other
+- `phone` - contact number
+- `address` - full address
+
+### Fresh Seed Command (Recommended)
+
+The `db:fresh-seed` command provides a convenient way to drop all tables, run migrations, and seed data in one step:
+
+```bash
+php artisan db:fresh-seed --scale=small
+```
+
+The command will show estimated time based on scale and ask for confirmation before executing:
+
+**Available Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--scale` | Data scale (small, medium, large, xlarge, xxlarge) | small |
+| `--seeder` | Custom seeder class | GeneralDataSeeder |
+| `--chunk` | Chunk size for batch inserts | 10000 |
+| `--no-seed` | Skip seeding | - |
+| `--skip-attendance` | Skip attendance data | - |
+| `--skip-leaves` | Skip leave data | - |
+| `--skip-balances` | Skip leave balance data | - |
+
+**Examples:**
+
+```bash
+# Small scale (~200K records) - default
+php artisan db:fresh-seed
+
+# Medium scale (~2M records)
+php artisan db:fresh-seed --scale=medium
+
+# Large scale
+php artisan db:fresh-seed --scale=large
+
+# Just migrate, no seeding
+php artisan db:fresh-seed --no-seed
+
+# Skip attendance data
+php artisan db:fresh-seed --scale=small --skip-attendance
+```
+
+**Output Example:**
+
+When the command completes, it displays a table showing the number of records and time taken for each table:
+
+```
++----------------+-----------+--------+
+| Table          | Records   | Time   |
++----------------+-----------+--------+
+| users          | 1,000     | 3s     |
+| salaries       | 1,000     | 3s     |
+| departments    | 106       | <1s    |
+| designations   | 118       | <1s    |
+| user_details | 1,000 | 1s  |
+| attendances    | 57,000    | 2s     |
+| leaves         | 5,000     | 1s     |
+| leave_balances | 12,000    | 1s     |
++----------------+-----------+--------+
+```
+
+### Performance Notes
+
+- Use `medium` scale for typical development (2M records)
+- For production-like testing, use `large` or `xlarge`
+- Enable Redis queue for async processing
+- Monitor memory usage for large scales
+
 ## API Endpoints
 
 ### Reports
