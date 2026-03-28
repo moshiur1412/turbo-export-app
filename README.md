@@ -235,7 +235,7 @@ When the command completes, it displays a table showing the number of records an
 | salaries       | 1,000     | 3s     |
 | departments    | 106       | <1s    |
 | designations   | 118       | <1s    |
-| user_details | 1,000 | 1s  |
+| user_details   | 1,000     | 1s     |
 | attendances    | 57,000    | 2s     |
 | leaves         | 5,000     | 1s     |
 | leave_balances | 12,000    | 1s     |
@@ -399,13 +399,40 @@ php artisan reports:test attendance_monthly \
 
 ## Export Formats
 
-| Format | Description | Driver |
-|--------|-------------|--------|
-| CSV | Comma-separated values | Streaming |
-| XLSX | Excel spreadsheet | Memory-based |
-| PDF | Portable document format | Memory-based |
-| DOCX | Word document | Memory-based |
-| SQL | SQL INSERT statements | Streaming |
+| Format | Description | Driver | Memory Required | Tested Records |
+|--------|-------------|--------|-----------------|----------------|
+| CSV | Comma-separated values | Streaming | ~512MB | 100K+ |
+| XLSX | Excel spreadsheet | Memory-based | 2GB | 47,520 |
+| PDF | Portable document format | Memory-based | 2GB | 2,000 (slow) |
+| DOCX | Word document | Memory-based | 2GB | 47,520 |
+| SQL | SQL INSERT statements | Streaming | ~512MB | 47,520 |
+
+### Memory Optimization
+
+This application uses `cursor()` instead of `chunk()` for streaming database records, which prevents memory exhaustion when processing large datasets (50,000+ records). The ExportService processes data in batches while keeping only the current batch in memory.
+
+### Format-Specific Configuration
+
+The package automatically adjusts memory limits based on export format:
+
+```env
+# Default for CSV/SQL (streaming)
+EXPORT_MEMORY_LIMIT=1G
+
+# Higher for XLSX/PDF/DOCX (memory-based)
+EXPORT_MEMORY_LIMIT_XLSX=2G
+EXPORT_MEMORY_LIMIT_PDF=2G
+EXPORT_MEMORY_LIMIT_DOCX=2G
+```
+
+### Bangladesh Number Formatting
+
+Numbers are formatted using Bangladesh locale convention (comma as thousands separator):
+- `40588` → `40,588`
+- `40588.50` → `40,588.50`
+- `1000000` → `1,000,000`
+
+This is implemented in `ReportFormatter::bangladeshNumber()` which uses PHP's `number_format()` function.
 
 ## Package Dependencies
 
@@ -431,8 +458,18 @@ This module uses the `turbo-stream-export` package with these modifications:
 
 ### PDF export not working
 1. Check TCPDF installation: `composer show tecnickcom/tcpdf`
-2. Check memory limit: Set `memory_limit = -1` in php.ini for large reports
-3. Check disk space: Ensure storage/app/exports has available space
+2. Check memory limit: PDF exports require 2GB+ memory for large datasets
+3. For 50,000+ records, PDF export will timeout - consider using CSV format
+4. Check disk space: Ensure storage/app/exports has available space
+
+### XLSX export memory issues
+1. XLSX requires 2GB memory for large datasets (50,000+ records)
+2. The driver now uses running totals instead of storing all records
+3. Increase memory limit: `EXPORT_MEMORY_LIMIT_XLSX=2G` in .env
+
+### SQL/DOCX exports
+- These formats work well with large datasets (tested with 47,520 records)
+- Uses streaming for memory efficiency
 
 ### No data in reports
 1. Verify data exists in database: `php artisan tinker` then `User::count()`

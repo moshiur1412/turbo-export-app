@@ -2,6 +2,7 @@
     "name": "turbostream/export-engine",
     "description": "High-performance Laravel package for exporting 100M+ records using chunked queries with async processing via Redis queues. Supports CSV, Excel, PDF, DOCX, and SQL formats.",
     "type": "laravel-package",
+    "version": "1.0.0",
     "license": "MIT",
     "keywords": [
         "laravel",

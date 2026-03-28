@@ -52,6 +52,61 @@ class ExportService
         return array_keys($this->drivers);
     }
 
+    public function processExportWithClosures(
+        string $exportId,
+        Builder $query,
+        array $columns,
+        string $filename,
+        string $format = 'csv',
+        array $filters = [],
+        ?int $chunkSize = null
+    ): string {
+        $driver = $this->getDriver($format);
+        $totalRecords = $query->count();
+        
+        if ($format === 'pdf' && $totalRecords > 300000) {
+            throw new \RuntimeException(
+                "PDF export is not supported for more than 300,000 records. " .
+                "Current record count: {$totalRecords}. Please use CSV or XLSX format for large exports."
+            );
+        }
+        
+        $effectiveChunkSize = $this->determineChunkSize($totalRecords, $chunkSize);
+        
+        $finalFilename = $this->buildFilenameWithFilters($filename, $filters, $format);
+        $filePath = $this->getFilePath($finalFilename, $driver->getFileExtension());
+
+        $this->updateProgress($exportId, 0, $totalRecords, 'processing', null, $filters);
+
+        $driver->setReportInfo($filename, $filters);
+
+        if ($format === 'csv' || $format === 'sql') {
+            $filePath = $this->processStreamingExportWithClosures(
+                $exportId,
+                $query,
+                $columns,
+                $filePath,
+                $driver,
+                $totalRecords,
+                $effectiveChunkSize
+            );
+        } else {
+            $filePath = $this->processMemoryExportWithClosures(
+                $exportId,
+                $query,
+                $columns,
+                $filePath,
+                $driver,
+                $totalRecords,
+                $effectiveChunkSize
+            );
+        }
+
+        $this->updateProgress($exportId, 100, $totalRecords, 'completed', $filePath, $filters);
+
+        return $filePath;
+    }
+
     public function processExport(
         string $exportId,
         Builder $query,
@@ -134,29 +189,25 @@ class ExportService
         
         $driver->writeHeader($columns, $handle);
 
+        $format = $driver->getFormat();
+        $progressInterval = in_array($format, ['xlsx', 'docx']) ? 1 : 5;
+        
         $exportedRecords = 0;
         $lastLoggedProgress = 0;
-        $logInterval = (int) config('turbo-export.log_progress_interval', 100000);
+        $batchRecords = [];
 
-        $query->chunk($chunkSize, function ($records) use (
-            $driver,
-            $columns,
-            $handle,
-            &$exportedRecords,
-            $exportId,
-            $totalRecords,
-            &$lastLoggedProgress,
-            $logInterval,
-            $chunkSize
-        ) {
-            $driver->writeBatch($records, $columns, $handle);
+        foreach ($query->cursor() as $record) {
+            $batchRecords[] = $record;
+            $exportedRecords++;
 
-            $exportedRecords += $records->count();
-            $progress = (int) (($exportedRecords / $totalRecords) * 100);
-            
-            $shouldLog = ($progress - $lastLoggedProgress >= 5) || 
-                         ($exportedRecords % $logInterval < $chunkSize) ||
-                         $exportedRecords === $totalRecords;
+            if (count($batchRecords) >= $chunkSize) {
+                $driver->writeBatch(collect($batchRecords), $columns, $handle);
+                $batchRecords = [];
+                gc_collect_cycles();
+            }
+
+            $progress = $totalRecords > 0 ? (int)(($exportedRecords / $totalRecords) * 100) : 100;
+            $shouldLog = ($progress - $lastLoggedProgress >= $progressInterval) || $exportedRecords === $totalRecords;
 
             if ($shouldLog) {
                 $this->updateProgress($exportId, $progress, $totalRecords, 'processing');
@@ -166,9 +217,11 @@ class ExportService
                     \Illuminate\Support\Facades\Log::info("Export [{$exportId}] progress: {$progress}% ({$exportedRecords}/{$totalRecords})");
                 }
             }
+        }
 
-            gc_collect_cycles();
-        });
+        if (!empty($batchRecords)) {
+            $driver->writeBatch(collect($batchRecords), $columns, $handle);
+        }
 
         fclose($handle);
         $driver->finalize(storage_path('app/' . $filePath), null);
@@ -187,29 +240,198 @@ class ExportService
     ): string {
         $driver->writeHeader($columns, null);
 
+        $format = $driver->getFormat();
+        $progressInterval = in_array($format, ['xlsx', 'docx']) ? 1 : 5;
+        
         $exportedRecords = 0;
         $lastLoggedProgress = 0;
+        $batchRecords = [];
 
-        $query->chunk($chunkSize, function ($records) use (
-            $driver,
-            $columns,
-            &$exportedRecords,
-            $exportId,
-            $totalRecords,
-            &$lastLoggedProgress
-        ) {
-            $driver->writeBatch($records, $columns, null);
+        foreach ($query->cursor() as $record) {
+            $batchRecords[] = $record;
+            $exportedRecords++;
 
-            $exportedRecords += $records->count();
-            $progress = (int) (($exportedRecords / $totalRecords) * 100);
+            if (count($batchRecords) >= $chunkSize) {
+                $driver->writeBatch(collect($batchRecords), $columns, null);
+                $batchRecords = [];
+                gc_collect_cycles();
+            }
 
-            if (($progress - $lastLoggedProgress >= 5) || $exportedRecords === $totalRecords) {
+            $progress = $totalRecords > 0 ? (int)(($exportedRecords / $totalRecords) * 100) : 100;
+            $shouldLog = ($progress - $lastLoggedProgress >= $progressInterval) || $exportedRecords === $totalRecords;
+            
+            if ($shouldLog) {
                 $this->updateProgress($exportId, $progress, $totalRecords, 'processing');
                 $lastLoggedProgress = $progress;
                 
+                if (config('turbo-export.enable_progress_logging', true)) {
+                    \Illuminate\Support\Facades\Log::info("Export [{$exportId}] progress: {$progress}% ({$exportedRecords}/{$totalRecords})");
+                }
+            }
+        }
+
+        if (!empty($batchRecords)) {
+            $driver->writeBatch(collect($batchRecords), $columns, null);
+        }
+
+        $driver->finalize(storage_path('app/' . $filePath), null);
+        
+        return $filePath;
+    }
+
+    private function processStreamingExportWithClosures(
+        string $exportId,
+        Builder $query,
+        array $columns,
+        string $filePath,
+        ExportDriverInterface $driver,
+        int $totalRecords,
+        int $chunkSize
+    ): string {
+        $directory = dirname(storage_path('app/' . $filePath));
+        if (!file_exists($directory)) {
+            mkdir($directory, 0755, true);
+        }
+
+        $handle = fopen(storage_path('app/' . $filePath), 'w');
+        
+        $columnKeys = array_keys($columns);
+        $driver->writeHeader($columnKeys, $handle);
+
+        $format = $driver->getFormat();
+        $progressInterval = in_array($format, ['xlsx', 'docx']) ? 1 : 5;
+        
+        $exportedRecords = 0;
+        $lastLoggedProgress = 0;
+        $batchRecords = [];
+
+        foreach ($query->cursor() as $record) {
+            $row = [];
+            foreach ($columns as $key => $column) {
+                if ($column instanceof \Closure) {
+                    $row[$key] = $column($record);
+                } else {
+                    $row[$key] = data_get($record, $column, $column);
+                }
+            }
+            $batchRecords[] = (object) $row;
+            $exportedRecords++;
+
+            if (count($batchRecords) >= $chunkSize) {
+                $driver->writeBatch(collect($batchRecords), $columnKeys, $handle);
+                $batchRecords = [];
                 gc_collect_cycles();
             }
-        });
+
+            $progress = $totalRecords > 0 ? (int)(($exportedRecords / $totalRecords) * 100) : 100;
+            $shouldLog = ($progress - $lastLoggedProgress >= $progressInterval) || $exportedRecords === $totalRecords;
+
+            if ($shouldLog) {
+                $this->updateProgress($exportId, $progress, $totalRecords, 'processing');
+                $lastLoggedProgress = $progress;
+                
+                if (config('turbo-export.enable_progress_logging', true)) {
+                    \Illuminate\Support\Facades\Log::info("Export [{$exportId}] progress: {$progress}% ({$exportedRecords}/{$totalRecords})");
+                }
+            }
+        }
+
+        if (!empty($batchRecords)) {
+            $driver->writeBatch(collect($batchRecords), $columnKeys, $handle);
+        }
+
+        fclose($handle);
+        $driver->finalize(storage_path('app/' . $filePath), null);
+
+        return $filePath;
+    }
+
+    private function processMemoryExportWithClosures(
+        string $exportId,
+        Builder $query,
+        array $columns,
+        string $filePath,
+        ExportDriverInterface $driver,
+        int $totalRecords,
+        int $chunkSize
+    ): string {
+        $columnKeys = array_keys($columns);
+        $driver->writeHeader($columnKeys, null);
+        
+        $format = $driver->getFormat();
+        $progressInterval = in_array($format, ['xlsx', 'docx']) ? 1 : 5;
+        
+        if ($format === 'pdf') {
+            $recordCount = 0;
+            $lastLoggedProgress = 0;
+            
+            foreach ($query->cursor() as $record) {
+                $row = [];
+                foreach ($columns as $key => $column) {
+                    if ($column instanceof \Closure) {
+                        $row[$key] = $column($record);
+                    } else {
+                        $row[$key] = data_get($record, $column, $column);
+                    }
+                }
+                
+                $driver->writeRow(array_values($row), null);
+                $recordCount++;
+                
+                $progress = $totalRecords > 0 ? (int)(($recordCount / $totalRecords) * 100) : 100;
+                $shouldLog = ($progress - $lastLoggedProgress >= $progressInterval) || $recordCount === $totalRecords;
+                
+                if ($shouldLog) {
+                    $this->updateProgress($exportId, $progress, $totalRecords, 'processing');
+                    $lastLoggedProgress = $progress;
+                    
+                    if (config('turbo-export.enable_progress_logging', true)) {
+                        \Illuminate\Support\Facades\Log::info("Export [{$exportId}] progress: {$progress}% ({$recordCount}/{$totalRecords})");
+                    }
+                    
+                    gc_collect_cycles();
+                }
+            }
+        } else {
+            $exportedRecords = 0;
+            $lastLoggedProgress = 0;
+            $batchRecords = [];
+
+            foreach ($query->cursor() as $record) {
+                $row = [];
+                foreach ($columns as $key => $column) {
+                    if ($column instanceof \Closure) {
+                        $row[$key] = $column($record);
+                    } else {
+                        $row[$key] = data_get($record, $column, $column);
+                    }
+                }
+                $batchRecords[] = (object) $row;
+                $exportedRecords++;
+
+                if (count($batchRecords) >= $chunkSize) {
+                    $driver->writeBatch(collect($batchRecords), $columnKeys, null);
+                    $batchRecords = [];
+                    gc_collect_cycles();
+                }
+
+                $progress = $totalRecords > 0 ? (int)(($exportedRecords / $totalRecords) * 100) : 100;
+                $shouldLog = ($progress - $lastLoggedProgress >= $progressInterval) || $exportedRecords === $totalRecords;
+                
+                if ($shouldLog) {
+                    $this->updateProgress($exportId, $progress, $totalRecords, 'processing');
+                    $lastLoggedProgress = $progress;
+                    
+                    if (config('turbo-export.enable_progress_logging', true)) {
+                        \Illuminate\Support\Facades\Log::info("Export [{$exportId}] progress: {$progress}% ({$exportedRecords}/{$totalRecords})");
+                    }
+                }
+            }
+
+            if (!empty($batchRecords)) {
+                $driver->writeBatch(collect($batchRecords), $columnKeys, null);
+            }
+        }
 
         $driver->finalize(storage_path('app/' . $filePath), null);
         

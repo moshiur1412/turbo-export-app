@@ -32,14 +32,15 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
     private bool $headerAdded = false;
     private bool $headerWritten = false;
     private int $rowBufferSize = 100;
+    private float $headerHeight = 0;
+    private float $contentTopMargin = 25;
 
     public function __construct()
     {
         parent::__construct('L', 'mm', 'A4', true, 'UTF-8', false, false);
         
-        if (!isset($this->w)) {
-            $this->w = $this->getPageWidth();
-        }
+        $this->w = 297;
+        $this->h = 210;
         
         $this->initializePdf();
     }
@@ -53,37 +54,52 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
         
         $this->setPrintHeader(false);
         $this->setPrintFooter(true);
-        $this->SetHeaderMargin(5);
+        $this->SetHeaderMargin(30);
         $this->SetFooterMargin(15);
-        $this->SetMargins(10, 10, 10);
-        $this->SetAutoPageBreak(true, 18);
+        $this->SetMargins(10, 25, 10);
+        $this->SetAutoPageBreak(true, 20);
         
         $this->AddPage();
         $this->SetFont('dejavusans', '', 8);
         
         $this->SetTextColor(0, 0, 0);
         $this->SetFillColor(255, 255, 255);
-        $this->SetDrawColor(0, 0, 0);
+        $this->SetDrawColor(200, 200, 200);
+        $this->SetLineWidth(0.1);
+        
+        $this->headerHeight = 0;
     }
 
     public function Footer()
     {
-        $this->SetY(-15);
+        $this->SetY(-12);
         $this->SetFont('dejavusans', 'I', 7);
         $this->SetTextColor(100, 100, 100);
         
-        $printDate = ReportFormatter::formatDateTime(now());
+        $currentPage = $this->getPage();
+        $totalPages = $this->getNumPages();
         $totalFormatted = ReportFormatter::bangladeshNumber($this->totalRecords);
-        $pageInfoText = "Page {$this->getAliasNumPage()} of {$totalFormatted}";
+        $printDate = ReportFormatter::formatDateTime(now());
         
         $pageWidth = $this->getPageWidth();
         
-        $this->SetX(10);
-        $this->Cell(0, 5, "Print On: {$printDate}", 0, 0, 'L');
+        $leftText = "Print On: {$printDate}";
+        $centerText = "Total Records: {$totalFormatted}";
+        $rightText = "Page {$currentPage} of {$totalPages}";
         
-        $pageInfoWidth = $this->GetStringWidth($pageInfoText);
-        $this->SetX($pageWidth - 10 - $pageInfoWidth);
-        $this->Cell($pageInfoWidth, 5, $pageInfoText, 0, 0, 'R');
+        $leftWidth = $this->GetStringWidth($leftText);
+        $centerWidth = $this->GetStringWidth($centerText);
+        $rightWidth = $this->GetStringWidth($rightText);
+        
+        $this->SetX(10);
+        $this->Cell($leftWidth, 5, $leftText, 0, 0, 'L');
+        
+        $centerX = ($pageWidth - $centerWidth) / 2;
+        $this->SetX($centerX);
+        $this->Cell($centerWidth, 5, $centerText, 0, 0, 'C');
+        
+        $this->SetX($pageWidth - 10 - $rightWidth);
+        $this->Cell($rightWidth, 5, $rightText, 0, 0, 'R');
         
         $this->SetTextColor(0, 0, 0);
     }
@@ -143,6 +159,10 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
         $this->columnTotals = array_fill(0, count($columns), 0);
         $this->headerWritten = false;
         
+        // Force simple mode always to avoid hanging issues with Table
+        $this->useAdvancedTable = false;
+        $this->table = null;
+        
         $pageWidth = $this->getPageWidth() - 20;
         $colWidth = $pageWidth / count($columns);
         
@@ -161,12 +181,7 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
         }
         
         $this->writeReportInfo();
-        
-        if ($this->useAdvancedTable && !empty($this->groupByColumn)) {
-            $this->initializeAdvancedTable();
-        } else {
-            $this->writeColumnHeader();
-        }
+        $this->writeColumnHeader();
     }
 
     private function writeReportInfo(): void
@@ -202,11 +217,12 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
                 $this->SetFont('dejavusans', '', 7);
                 $filterLine = 'Filters: ' . implode(' | ', $filterParts);
                 $this->Cell(0, 4, $filterLine, 0, 0, 'L');
-                $this->Ln(4.5);
+                $this->Ln(4);
             }
         }
         
-        $this->Ln(2);
+        $this->headerHeight = $this->GetY();
+        $this->Ln(1);
     }
 
     private function initializeAdvancedTable(): void
@@ -275,37 +291,44 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
         $this->headerAdded = true;
     }
 
-    private function writeColumnHeader(): void
+    public function writeColumnHeader(): void
     {
+        $currentY = $this->GetY();
+        $headerY = max($currentY, $this->contentTopMargin);
+        
+        $this->SetY($headerY);
         $this->SetFillColor(68, 114, 196);
         $this->SetTextColor(255, 255, 255);
-        $this->SetDrawColor(0, 0, 0);
-        $this->SetLineWidth(0.1);
+        $this->SetDrawColor(100, 100, 100);
+        $this->SetLineWidth(0.3);
         $this->SetFont('dejavusans', 'B', 8);
         
         $pageWidth = $this->getPageWidth() - 20;
         $colWidth = $pageWidth / count($this->reportColumns);
         
+        $this->SetX(10);
+        
+        $cellHeight = 10;
+        $this->SetY($headerY + ($cellHeight - 4) / 2);
+        
         foreach ($this->reportColumns as $index => $column) {
             $headerName = ReportFormatter::formatHeaderName($column);
             $cellWidth = $this->reportColumnWidths[$index] ?? $colWidth;
-            $this->Cell($cellWidth, 7, $headerName, 1, 0, 'C', true);
+            $this->Cell($cellWidth, $cellHeight, $headerName, 1, 0, 'C', true);
         }
         
-        $this->Ln();
+        $this->Ln($cellHeight);
         $this->SetTextColor(0, 0, 0);
+        $this->SetDrawColor(200, 200, 200);
+        $this->SetLineWidth(0.1);
         $this->SetFont('dejavusans', '', 7);
         $this->headerWritten = true;
     }
 
     public function writeRow(array $data, $handle = null): void
     {
-        if ($this->useAdvancedTable && $this->table !== null) {
-            $this->processGroupChange($data);
-            $this->writeAdvancedRow($data);
-        } else {
-            $this->writeSimpleRow($data);
-        }
+        // Always use simple mode
+        $this->writeSimpleRow($data);
         
         $this->currentRow++;
         $this->totalRecords++;
@@ -314,6 +337,28 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
         if ($this->rowsSinceLastGc >= $this->gcInterval) {
             $this->rowsSinceLastGc = 0;
             gc_collect_cycles();
+        }
+    }
+
+    public function writeBatch($records, array $columns, $handle = null): void
+    {
+        $firstRecord = $records->first();
+        $usesProcessedRows = $firstRecord && is_object($firstRecord) && (get_class($firstRecord) === 'stdClass' || isset($firstRecord->{'Employee ID'}) || isset($firstRecord->{'Employee Name'}));
+        
+        foreach ($records as $record) {
+            if ($usesProcessedRows) {
+                $row = [];
+                foreach ($columns as $columnName) {
+                    $row[] = $record->{$columnName} ?? null;
+                }
+                $this->writeRow($row);
+            } else {
+                $row = [];
+                foreach ($columns as $column) {
+                    $row[] = data_get($record, $column);
+                }
+                $this->writeRow($row);
+            }
         }
     }
 
@@ -420,14 +465,20 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
     private function writeSimpleRow(array $data): void
     {
         $pageWidth = $this->getPageWidth() - 20;
+        $pageHeight = $this->getPageHeight();
         $colWidth = $pageWidth / count($this->reportColumns);
         
         $fill = ($this->currentRow % 2) == 0;
         $this->SetFillColor(245, 245, 245);
         $this->SetTextColor(0, 0, 0);
         $this->SetFont('dejavusans', '', 7);
+        $this->SetDrawColor(200, 200, 200);
+        $this->SetLineWidth(0.1);
         
-        $rowHeight = 5.5;
+        $rowHeight = 6;
+        $maxCellHeight = $rowHeight;
+        
+        $this->SetX(10);
         
         foreach ($data as $index => $value) {
             $columnName = $this->reportColumns[$index] ?? '';
@@ -438,12 +489,14 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
             $align = $isNumeric ? 'R' : 'L';
             
             $stringWidth = $this->GetStringWidth($formattedValue);
-            if ($stringWidth > $cellWidth - 2) {
-                $lines = ceil($stringWidth / ($cellWidth - 2));
+            if ($stringWidth > $cellWidth - 4) {
+                $lines = ceil($stringWidth / ($cellWidth - 4));
                 $cellHeight = max($rowHeight, $lines * 4);
             } else {
                 $cellHeight = $rowHeight;
             }
+            
+            $maxCellHeight = max($maxCellHeight, $cellHeight);
             
             $this->MultiCell($cellWidth, $cellHeight, $formattedValue, 1, $align, $fill, 0);
             
@@ -452,30 +505,28 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
             }
         }
         
-        $this->Ln($rowHeight);
-    }
-
-    public function writeBatch($records, array $columns, $handle = null): void
-    {
-        foreach ($records as $record) {
-            $row = [];
-            foreach ($columns as $column) {
-                $row[] = data_get($record, $column);
-            }
-            $this->writeRow($row);
+        $this->Ln($maxCellHeight);
+        
+        $currentY = $this->GetY();
+        $footerSpace = 20;
+        $minContentSpace = 30;
+        
+        if ($currentY > ($pageHeight - $footerSpace - $minContentSpace)) {
+            $this->AddPage();
+            $this->writeColumnHeader();
         }
     }
 
     public function finalize(string $filePath, $handle = null): string
     {
-        if ($this->useAdvancedTable && $this->table !== null) {
-            if (!empty($this->groupByColumn) && $this->currentGroupValue !== null) {
-                $this->writeSubtotal($this->currentGroupValue);
-            }
-            $this->writeGrandTotal();
-            $this->table->close();
-        } else {
-            $this->writeGrandTotal();
+        $this->writeGrandTotal();
+        
+        $pageHeight = $this->getPageHeight();
+        $currentY = $this->GetY();
+        $footerSpace = 20;
+        
+        if ($currentY > ($pageHeight - $footerSpace)) {
+            $this->AddPage();
         }
         
         $directory = dirname($filePath);
@@ -548,29 +599,39 @@ class PdfExportDriver extends TcpdfPdf implements ExportDriverInterface
             return;
         }
         
-        $this->Ln(2);
+        $this->Ln(5);
         
         $this->SetFillColor(226, 239, 218);
         $this->SetFont('dejavusans', 'B', 8);
         $this->SetTextColor(0, 0, 0);
+        $this->SetDrawColor(100, 100, 100);
+        $this->SetLineWidth(0.3);
         
         $pageWidth = $this->getPageWidth() - 20;
         $colWidth = $pageWidth / count($this->reportColumns);
+        
+        $this->SetX(10);
         
         foreach ($this->columnTotals as $index => $total) {
             $columnName = $this->reportColumns[$index] ?? '';
             $isNumeric = ReportFormatter::isNumericColumn($columnName);
             $cellWidth = $this->reportColumnWidths[$index] ?? $colWidth;
             
+            $border = 'LTRB';
+            
             if ($index === 0) {
-                $this->Cell($cellWidth, 6, 'Grand Total', 1, 0, 'L', true);
+                $this->Cell($cellWidth, 7, 'Grand Total', $border, 0, 'L', true);
             } elseif ($isNumeric && $total != 0) {
                 $formattedTotal = ReportFormatter::formatValue($total, true);
-                $this->Cell($cellWidth, 6, $formattedTotal, 1, 0, 'R', true);
+                $this->Cell($cellWidth, 7, $formattedTotal, $border, 0, 'R', true);
             } else {
-                $this->Cell($cellWidth, 6, '-', 1, 0, 'C', true);
+                $this->Cell($cellWidth, 7, '', $border, 0, 'C', false);
             }
         }
+        
+        $this->Ln();
+        $this->SetDrawColor(200, 200, 200);
+        $this->SetLineWidth(0.1);
     }
 
     public function addCustomRow(array $cellData, string $style = 'body'): void

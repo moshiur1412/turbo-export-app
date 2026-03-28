@@ -18,10 +18,10 @@ class XlsxExportDriver implements ExportDriverInterface
     private int $currentRow = 1;
     private string $tempFile;
     private array $numericColumns = [];
-    private array $allRecords = [];
     private string $reportName = '';
     private array $filters = [];
     private int $totalRecords = 0;
+    private array $runningTotals = [];
 
     public function __construct()
     {
@@ -68,22 +68,31 @@ class XlsxExportDriver implements ExportDriverInterface
         
         $this->currentRow = 3;
         
-        $headerStyle = new \PhpOffice\PhpSpreadsheet\Style\Fill();
-        $headerStyle->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
-        $headerStyle->getStartColor()->setRGB('4472C4');
-        
-        $colIndex = 'A';
+        $colIndex = 0;
+        $lastColIndex = 0;
         foreach ($columns as $column) {
-            $cell = $colIndex . $this->currentRow;
+            $cell = chr(65 + $colIndex) . $this->currentRow;
             $sheet->setCellValue($cell, ReportFormatter::formatHeaderName($column));
             $sheet->getStyle($cell)->getFont()->setBold(true);
-            $sheet->getStyle($cell)->getFont()->setSize(9);
-            $sheet->getStyle($cell)->getFill()->setFillType(Fill::FILL_SOLID);
+            $sheet->getStyle($cell)->getFont()->setSize(10);
+            $sheet->getStyle($cell)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID);
             $sheet->getStyle($cell)->getFill()->getStartColor()->setRGB('4472C4');
             $sheet->getStyle($cell)->getFont()->getColor()->setRGB('FFFFFF');
-            $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
+            $sheet->getStyle($cell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             $colIndex++;
+            $lastColIndex = $colIndex;
+        }
+        
+        if ($lastColIndex > 0) {
+            $headerRange = 'A' . $this->currentRow . ':' . chr(64 + $lastColIndex) . $this->currentRow;
+            $sheet->getStyle($headerRange)->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
         }
         
         $this->currentRow++;
@@ -156,32 +165,67 @@ class XlsxExportDriver implements ExportDriverInterface
     {
         $sheet = $sheet ?? $this->spreadsheet->getActiveSheet();
         
+        $startRow = $this->currentRow;
+        
+        $firstRecord = $records->first();
+        $usesProcessedRows = $firstRecord && is_object($firstRecord) && (get_class($firstRecord) === 'stdClass' || isset($firstRecord->{'Employee ID'}) || isset($firstRecord->{'Employee Name'}));
+        
         foreach ($records as $record) {
             $colIndex = 'A';
-            foreach ($columns as $colIndexKey => $column) {
-                $value = data_get($record, $column);
+            $colIndexNum = 0;
+            foreach ($columns as $colIndexKey => $columnName) {
+                if ($usesProcessedRows) {
+                    $value = $record->{$columnName} ?? null;
+                } else {
+                    $value = data_get($record, $columnName);
+                }
                 $cell = $colIndex . $this->currentRow;
-                $isNumeric = ReportFormatter::isNumericColumn($column);
+                $isNumeric = ReportFormatter::isNumericColumn($columnName);
                 
                 if ($isNumeric && is_numeric($value)) {
                     $sheet->setCellValue($cell, floatval($value));
-                    $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0.00');
                 } else {
                     $sheet->setCellValue($cell, ReportFormatter::formatValue($value, false));
                 }
                 
-                if ($isNumeric) {
-                    $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                } else {
-                    $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-                }
-                $sheet->getStyle($cell)->getFont()->setSize(9);
-                $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
                 $colIndex++;
+                $colIndexNum++;
             }
             $this->currentRow++;
             $this->totalRecords++;
-            $this->allRecords[] = $record;
+            
+            foreach ($this->numericColumns as $colIndexNum => $columnName) {
+                if (!ReportFormatter::isNumericColumn($columnName)) {
+                    continue;
+                }
+                $value = $usesProcessedRows 
+                    ? ($record->{$columnName} ?? null)
+                    : data_get($record, $columnName);
+                if (is_numeric($value)) {
+                    if (!isset($this->runningTotals[$columnName])) {
+                        $this->runningTotals[$columnName] = 0;
+                    }
+                    $this->runningTotals[$columnName] += floatval($value);
+                }
+            }
+        }
+        
+        $this->applyStylesInBatch($sheet, $columns, $startRow);
+    }
+    
+    private function applyStylesInBatch($sheet, array $columns, int $startRow): void
+    {
+        $endRow = $this->currentRow - 1;
+        
+        foreach ($columns as $colIndex => $column) {
+            $colLetter = chr(65 + $colIndex);
+            $cellRange = $colLetter . $startRow . ':' . $colLetter . $endRow;
+            
+            $isNumeric = ReportFormatter::isNumericColumn($column);
+            
+            if ($isNumeric) {
+                $sheet->getStyle($cellRange)->getNumberFormat()->setFormatCode('#,##0.00');
+            }
         }
     }
 
@@ -230,14 +274,7 @@ class XlsxExportDriver implements ExportDriverInterface
             }
             
             $cell = chr(65 + $colIndex) . $this->currentRow;
-            $total = 0;
-            
-            foreach ($this->allRecords as $record) {
-                $value = data_get($record, $columnName);
-                if (is_numeric($value)) {
-                    $total += floatval($value);
-                }
-            }
+            $total = $this->runningTotals[$columnName] ?? 0;
             
             $sheet->setCellValue($cell, $total);
             $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0.00');
@@ -263,7 +300,18 @@ class XlsxExportDriver implements ExportDriverInterface
         $highestRow = $sheet->getHighestRow();
         
         for ($col = 'A'; $col <= $highestColumn; $col++) {
-            $sheet->getColumnDimension($col)->setWidth(15);
+            $maxLength = 10;
+            $colLetter = $col;
+            
+            for ($row = 1; $row <= $highestRow; $row++) {
+                $cellValue = $sheet->getCell($colLetter . $row)->getValue();
+                if ($cellValue !== null && $cellValue !== '') {
+                    $length = strlen((string) $cellValue);
+                    $maxLength = max($maxLength, $length);
+                }
+            }
+            
+            $sheet->getColumnDimension($colLetter)->setWidth(min($maxLength + 2, 50));
         }
     }
 }

@@ -14,7 +14,7 @@ TurboStream Export Engine is designed for Laravel applications that need to expo
 ### Key Features
 
 - **100M+ Records Support**: Optimized chunk sizes for massive datasets (10K-20K per chunk)
-- **Memory Efficient**: Processes data in batches, stays under 512MB memory usage
+- **Memory Efficient**: Uses `cursor()` instead of `chunk()` to stream records without loading all into memory
 - **5 Export Formats**: CSV, XLSX, PDF, DOCX, SQL
 - **Async Processing**: Background jobs via Laravel Queues with Redis
 - **Real-time Progress**: Track export progress via Redis cache
@@ -24,6 +24,7 @@ TurboStream Export Engine is designed for Laravel applications that need to expo
 - **Laravel Native**: Integrates seamlessly with Laravel 9, 10, and 11
 - **Advanced PDF Reports**: Subtotals, grand totals, colspan/rowspan support
 - **Streaming PDF**: Memory-efficient export for 100M+ records
+- **Format-Specific Memory**: Automatic memory limit adjustment per format (2GB for XLSX/PDF/DOCX)
 
 ## Requirements
 
@@ -138,6 +139,8 @@ $downloadUrl = ExportFacade::getDownloadUrl($exportId);
 - Formatted headers with styling
 - Auto-sizing columns
 - Best for reports and sharing
+- Uses running totals instead of storing all records in memory
+- Requires 2GB memory for large datasets (50,000+ records)
 
 ### PDF
 - Professional document formatting
@@ -146,7 +149,8 @@ $downloadUrl = ExportFacade::getDownloadUrl($exportId);
 - Optional: Subtotals, grand totals, colspan/rowspan support
 - Use `setGroupBy()` to enable subtotals
 - Use `addCustomRow()` for custom headers with colspan
-- Best for all report sizes (100M+ records supported)
+- Best for small to medium reports (under 5,000 records)
+- Requires 2GB memory for larger datasets (may timeout for 50K+ records)
 
 ### DOCX (Word)
 - Table-formatted output
@@ -459,9 +463,9 @@ Each cell in `addCustomRow()` supports these options:
 ### Example: Financial Report with All Features
 
 ```php
-use TurboStreamExport\Contracts\Drivers\AdvancedPdfReportDriver;
+use TurboStreamExport\Contracts\Drivers\PdfExportDriver;
 
-$driver = new AdvancedPdfReportDriver();
+$driver = new PdfExportDriver();
 $driver->setReportInfo('Annual Financial Report 2021-2026', [
     'start_date' => '2021-01-01',
     'end_date' => '2026-03-31',
@@ -556,7 +560,13 @@ return [
     
     'default_format' => env('EXPORT_DEFAULT_FORMAT', 'csv'),
     
-    'memory_limit' => env('EXPORT_MEMORY_LIMIT', '512M'),
+    // Default memory limit for CSV/SQL (streaming exports)
+    'memory_limit' => env('EXPORT_MEMORY_LIMIT', '1G'),
+    
+    // Format-specific memory limits for memory-based exports
+    'memory_limit_xlsx' => env('EXPORT_MEMORY_LIMIT_XLSX', '2G'),
+    'memory_limit_pdf' => env('EXPORT_MEMORY_LIMIT_PDF', '2G'),
+    'memory_limit_docx' => env('EXPORT_MEMORY_LIMIT_DOCX', '2G'),
     
     'batch_commit_size' => env('EXPORT_BATCH_COMMIT_SIZE', 50000),
     
@@ -579,6 +589,18 @@ return [
     'log_progress_interval' => env('EXPORT_LOG_PROGRESS_INTERVAL', 100000),
 ];
 ```
+
+### Memory Management
+
+The package uses `cursor()` instead of `chunk()` to stream database records without loading all into memory:
+
+| Format | Export Type | Default Memory | Notes |
+|--------|-------------|----------------|-------|
+| CSV | Streaming | 1GB | Best for 100M+ records |
+| SQL | Streaming | 1GB | Best for database backup |
+| XLSX | Memory-based | 2GB | Uses running totals |
+| PDF | Memory-based | 2GB | Slow for 50K+ records |
+| DOCX | Memory-based | 2GB | Works well with 47K+ records |
 
 ## Testing
 
@@ -890,24 +912,82 @@ Install the Redis PHP extension or use predis:
 composer require predis/predis
 ```
 
-### Export stuck in "processing"
+### Queue Issues
 
-1. Check if queue worker is running
-2. Check Laravel logs
-3. Verify Redis connection
+#### Export stuck in "processing"
+
+1. Check if queue worker is running:
+```bash
+php artisan queue:work redis --queue=exports
+```
+
+2. Check Laravel logs for errors:
+```bash
+tail -f storage/logs/laravel.log
+```
+
+3. Verify Redis connection:
+```bash
+php artisan tinker
+Redis::ping();
+```
+
+#### Clear stuck queue jobs
+
+If jobs are stuck in the queue or failed:
 
 ```bash
-php artisan queue:work redis --queue=exports -v
+# Clear all pending jobs from exports queue
+php artisan queue:clear --queue=exports
+
+# Retry failed jobs
+php artisan queue:retry
+
+# Delete all failed jobs
+php artisan queue:flush
+
+# View failed jobs
+php artisan queue:failed
 ```
 
-### Memory issues with large exports
+#### Queue worker not processing
 
-Increase memory limit in config:
+If the worker is running but jobs aren't being processed:
+
+1. Check Redis connection in `.env`:
+```env
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+QUEUE_CONNECTION=redis
+```
+
+2. Restart the worker:
+```bash
+# Stop existing worker (Ctrl+C)
+# Start fresh worker
+php artisan queue:work redis --queue=exports
+```
+
+3. For high-volume exports, run worker with verbose output:
+```bash
+php artisan queue:work redis --queue=exports -vvv
+```
+
+#### Memory issues with large exports
+
+For XLSX/PDF/DOCX with large datasets, increase memory limits:
 
 ```env
-EXPORT_MEMORY_LIMIT=1024M
-EXPORT_LARGE_DATA_CHUNK_SIZE=25000
+# Default for CSV/SQL (streaming)
+EXPORT_MEMORY_LIMIT=1G
+
+# Higher for XLSX/PDF/DOCX (memory-based)
+EXPORT_MEMORY_LIMIT_XLSX=2G
+EXPORT_MEMORY_LIMIT_PDF=2G
+EXPORT_MEMORY_LIMIT_DOCX=2G
 ```
+
+The XLSX driver now uses running totals instead of storing all records in memory, reducing memory usage significantly.
 
 ### Performance issues
 

@@ -60,13 +60,20 @@ class ReportService
 
         $this->initializeProgress($exportId, $filters);
 
-        dispatch(new ProcessReportExportJob(
+        $queryBuilder = new ReportQueryBuilder($report->type, $filters);
+        $columns = $queryBuilder->getColumns();
+
+        dispatch(new \TurboStreamExport\Jobs\ProcessExportJob(
             $exportId,
-            $report->type,
-            $format,
-            $filters,
+            \App\Models\User::class,
+            array_keys($columns),
+            array_merge($filters, ['_report_type' => $report->type->value]),
             $filename,
-            $report->user_id
+            $format->value,
+            $report->user_id,
+            null,
+            false,
+            ReportQueryBuilder::class
         ));
     }
 

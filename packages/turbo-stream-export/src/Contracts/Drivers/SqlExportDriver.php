@@ -99,10 +99,20 @@ class SqlExportDriver implements ExportDriverInterface
 
     public function writeBatch($records, array $columns, $handle = null): void
     {
+        $firstRecord = $records->first();
+        $usesProcessedRows = $firstRecord && is_object($firstRecord) && (get_class($firstRecord) === 'stdClass' || isset($firstRecord->{'Employee ID'}) || isset($firstRecord->{'Employee Name'}));
+        
         foreach ($records as $record) {
-            $row = [];
-            foreach ($columns as $column) {
-                $row[] = data_get($record, $column);
+            if ($usesProcessedRows) {
+                $row = [];
+                foreach ($columns as $columnName) {
+                    $row[] = $record->{$columnName} ?? null;
+                }
+            } else {
+                $row = [];
+                foreach ($columns as $column) {
+                    $row[] = data_get($record, $column);
+                }
             }
             $this->writeRow($row);
             $this->totalRecords++;

@@ -25,6 +25,12 @@ export default function SearchableReportType({ value, onChange }) {
     }, [showDropdown]);
 
     useEffect(() => {
+        if (value && !selectedType) {
+            setSelectedType(value);
+        }
+    }, [value]);
+
+    useEffect(() => {
         if (search) {
             const filtered = {};
             Object.entries(categories).forEach(([category, types]) => {

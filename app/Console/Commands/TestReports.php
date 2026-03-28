@@ -13,6 +13,7 @@ class TestReports extends Command
     protected $signature = 'reports:test 
                             {type? : Specific report type to test}
                             {--format=csv : Export format (csv, xlsx, pdf, docx, sql)}
+                            {--fromat= : Export format alias (typo variant)}
                             {--user=1 : User ID for testing}
                             {--departments= : Comma-separated department IDs}
                             {--start= : Start date (Y-m-d)}
@@ -23,7 +24,13 @@ class TestReports extends Command
     public function handle(ReportService $reportService): int
     {
         $typeInput = $this->argument('type');
-        $format = ReportFormat::from($this->option('format'));
+        
+        // Support both --format and --fromat (typo variant)
+        $formatOption = $this->option('format');
+        $fromatOption = $this->option('fromat');
+        $formatValue = $fromatOption ?? $formatOption;
+        
+        $format = ReportFormat::from($formatValue);
         $userId = (int) $this->option('user');
         
         $filters = [];
@@ -89,7 +96,11 @@ class TestReports extends Command
         $this->info("Summary:");
         $this->table(
             ['Type', 'Status', 'Details'],
-            collect($results)->map(fn($r, $t) => [$t, $r['status'], $r['message'] ?? $r['id'] ?? '-'])->toArray()
+            collect($results)->map(fn($r, $t) => [
+                $t,
+                $r['status'] ?? '-',
+                $r['status'] === 'error' ? ($r['message'] ?? '-') : ($r['id'] ?? '-')
+            ])->toArray()
         );
 
         return Command::SUCCESS;

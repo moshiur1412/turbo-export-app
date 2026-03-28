@@ -11,54 +11,12 @@ class ReportFormatter
         }
         
         $num = floatval($number);
-        $isDecimal = $num != floor($num);
         
-        if ($isDecimal) {
-            $parts = explode('.', (string) $num);
-            $integerPart = $parts[0];
-            $decimalPart = isset($parts[1]) ? substr($parts[1], 0, 2) : '00';
-            
-            $result = '';
-            $length = strlen($integerPart);
-            
-            for ($i = 0; $i < $length; $i++) {
-                $posFromRight = $length - $i;
-                $result = $integerPart[$i] . $result;
-                
-                if ($posFromRight > 3 && $posFromRight <= 8) {
-                    if (($posFromRight - 4) % 2 == 0) {
-                        $result = ',' . $result;
-                    }
-                } elseif ($posFromRight > 8) {
-                    if (($posFromRight - 9) % 2 == 0) {
-                        $result = ',' . $result;
-                    }
-                }
-            }
-            
-            return $result . '.' . str_pad($decimalPart, 2, '0');
+        if ($num != floor($num)) {
+            return number_format($num, 2, '.', ',');
         }
         
-        $integerPart = (string) floor($num);
-        $result = '';
-        $length = strlen($integerPart);
-        
-        for ($i = 0; $i < $length; $i++) {
-            $posFromRight = $length - $i;
-            $result = $integerPart[$i] . $result;
-            
-            if ($posFromRight > 3 && $posFromRight <= 8) {
-                if (($posFromRight - 4) % 2 == 0) {
-                    $result = ',' . $result;
-                }
-            } elseif ($posFromRight > 8) {
-                if (($posFromRight - 9) % 2 == 0) {
-                    $result = ',' . $result;
-                }
-            }
-        }
-        
-        return $result;
+        return number_format($num, 0, '', ',');
     }
 
     public static function formatDate(string|\DateTimeInterface|null $date): string

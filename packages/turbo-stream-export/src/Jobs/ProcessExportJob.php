@@ -21,7 +21,7 @@ class ProcessExportJob implements ShouldQueue
     public int $tries = 3;
     public int $backoff = 60;
     public int $timeout = 3600;
-    public int $maxExceptions = 2;
+    public int $maxExceptions = 3;
 
     private array $chunkSizes = [
         'default' => 5000,
@@ -75,10 +75,14 @@ class ProcessExportJob implements ShouldQueue
 
             $this->increaseMemoryLimit();
 
-            $exportService->processExport(
+            $reportType = $this->filters['_report_type'] ?? null;
+            $columnDefinitions = $this->getColumnDefinitions($reportType);
+
+            // Use processExportWithClosures to handle closures in column definitions
+            $exportService->processExportWithClosures(
                 $this->exportId,
                 $query,
-                $this->columns,
+                $columnDefinitions,
                 $this->filename,
                 $this->format,
                 $this->filters,
@@ -186,6 +190,13 @@ class ProcessExportJob implements ShouldQueue
             return $this->customChunkSize;
         }
 
+        if ($this->format === 'pdf' && $estimatedRecords > 300000) {
+            throw new \RuntimeException(
+                "PDF export is not supported for more than 300,000 records. " .
+                "Current record count: {$estimatedRecords}. Please use CSV or XLSX format for large exports."
+            );
+        }
+
         if ($estimatedRecords > 100000000) {
             return $this->chunkSizes['xlarge'];
         }
@@ -199,7 +210,12 @@ class ProcessExportJob implements ShouldQueue
 
     private function increaseMemoryLimit(): void
     {
-        $memoryLimit = config('turbo-export.memory_limit', '512M');
+        $format = $this->format;
+        
+        $memoryLimit = match ($format) {
+            'xlsx', 'pdf', 'docx' => '4G',
+            default => '1G',
+        };
         
         if (function_exists('ini_set')) {
             ini_set('memory_limit', $memoryLimit);
@@ -238,6 +254,21 @@ class ProcessExportJob implements ShouldQueue
             'filter_summary' => $this->buildFilterSummary(),
             'updated_at' => now()->toIso8601String(),
         ]), 86400);
+    }
+
+    private function getColumnDefinitions(?string $reportType): array
+    {
+        if (!$reportType || !class_exists('App\\Enums\\ReportType')) {
+            return array_combine($this->columns, $this->columns);
+        }
+
+        $type = \App\Enums\ReportType::tryFrom($reportType);
+        if (!$type) {
+            return array_combine($this->columns, $this->columns);
+        }
+
+        $builder = new \App\Services\ReportQueryBuilder($type, $this->filters);
+        return $builder->getColumns();
     }
 
     private function buildFilterSummary(): string

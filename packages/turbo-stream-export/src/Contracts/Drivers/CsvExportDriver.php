@@ -77,23 +77,48 @@ class CsvExportDriver implements ExportDriverInterface
         $recordCount = $records->count();
         $this->totalRecords += $recordCount;
         
+        $firstRecord = $records->first();
+        $usesProcessedRows = $firstRecord && is_object($firstRecord) && (get_class($firstRecord) === 'stdClass' || isset($firstRecord->{'Employee ID'}) || isset($firstRecord->{'Employee Name'}));
+        
         if ($this->isMemoryMode) {
             foreach ($records as $record) {
-                $row = array_map(fn($col) => data_get($record, $col), $columns);
-                $formattedRow = $this->formatRow($row, $columns);
+                if ($usesProcessedRows) {
+                    $formattedRow = $this->formatProcessedRow($record, $columns);
+                } else {
+                    $row = array_map(fn($col) => data_get($record, $col), $columns);
+                    $formattedRow = $this->formatRow($row, $columns);
+                }
                 $this->buffer .= implode(',', array_map([$this, 'escapeCsvValue'], $formattedRow)) . "\n";
             }
             return;
         }
 
-        $data = $records->map(function ($record) use ($columns) {
-            return array_map(fn($col) => data_get($record, $col), $columns);
-        })->toArray();
+        if ($usesProcessedRows) {
+            foreach ($records as $record) {
+                $formattedRow = $this->formatProcessedRow($record, $columns);
+                fputcsv($handle, $formattedRow);
+            }
+        } else {
+            $data = $records->map(function ($record) use ($columns) {
+                return array_map(fn($col) => data_get($record, $col), $columns);
+            })->toArray();
 
-        foreach ($data as $row) {
-            $formattedRow = $this->formatRow($row, $columns);
-            fputcsv($handle, $formattedRow);
+            foreach ($data as $row) {
+                $formattedRow = $this->formatRow($row, $columns);
+                fputcsv($handle, $formattedRow);
+            }
         }
+    }
+    
+    private function formatProcessedRow($record, array $columns): array
+    {
+        $formatted = [];
+        foreach ($columns as $columnName) {
+            $value = $record->{$columnName} ?? null;
+            $isNumeric = ReportFormatter::isNumericColumn($columnName);
+            $formatted[] = ReportFormatter::formatValue($value, $isNumeric);
+        }
+        return $formatted;
     }
 
     public function finalize(string $filePath, $handle = null): string

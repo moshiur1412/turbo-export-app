@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-03-19
+## [1.0.0] - 2026-03-26
 
 ### Added
 - **100M+ Records Support**: Optimized for massive datasets
@@ -15,9 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Test Suite**: Unit, Feature, and LargeData tests
 - **Performance Monitoring**: Progress logging and performance tracking
 - **High Priority Queue**: Support for urgent exports
+- **Unified PDF Driver**: Simple reports, subtotals, grand totals, colspan/rowspan support
+- **Streaming Export**: Memory-efficient export for 100M+ records
+
+### Features
+- Export any Eloquent model to multiple formats
+- Filter exports with custom where clauses
+- Configurable chunk sizes
+- Multiple queue driver support (Redis, Database)
+- RESTful API controller ready
+- Signed URL generation for secure downloads
+- Support for Laravel 9, 10, and 11
 
 ### Formats
-- `csv` - Fastest, best for 100M+ records
+- `csv` - Fastest, best for 100M+ records (streaming)
 - `xlsx` - Excel format with styled headers
 - `pdf` - Professional document with pagination
 - `docx` - Word document with tables
@@ -28,23 +39,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `include_filter_in_filename` - Include filters in filename
 - `memory_limit` - Memory limit for exports
 - `log_progress_interval` - Progress logging frequency
-
-## [1.0.0] - 2026-03-19
-
-### Added
-- Initial release
-- Chunked query processing for memory-efficient exports
-- Async processing via Laravel Queues with Redis
-- Real-time progress tracking via Redis cache
-- CSV export driver with extensible architecture
-- Signed URL generation for secure downloads
-- Support for Laravel 9, 10, and 11
-- Comprehensive test suite with Pest
-- Service provider for easy Laravel integration
-
-### Features
-- Export any Eloquent model to CSV
-- Filter exports with custom where clauses
-- Configurable chunk sizes
-- Multiple queue driver support (Redis, Database)
-- RESTful API controller ready

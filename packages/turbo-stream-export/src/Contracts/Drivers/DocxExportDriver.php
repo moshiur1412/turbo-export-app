@@ -26,6 +26,9 @@ class DocxExportDriver implements ExportDriverInterface
     private array $columnTotals = [];
     private int $totalRecords = 0;
     private $currentSection;
+    private int $currentPageNumber = 1;
+    private int $rowsOnCurrentPage = 0;
+    private const ROWS_PER_PAGE = 30;
 
     public function __construct()
     {
@@ -137,6 +140,12 @@ class DocxExportDriver implements ExportDriverInterface
         $row = $this->table->addRow();
         $isAlternate = ($this->currentRowIndex % 2) == 0;
         
+        $this->rowsOnCurrentPage++;
+        if ($this->rowsOnCurrentPage >= self::ROWS_PER_PAGE) {
+            $this->currentPageNumber++;
+            $this->rowsOnCurrentPage = 0;
+        }
+        
         foreach ($data as $index => $value) {
             $columnName = $this->columns[$index] ?? '';
             $isNumeric = ReportFormatter::isNumericColumn($columnName);
@@ -166,13 +175,25 @@ class DocxExportDriver implements ExportDriverInterface
 
     public function writeBatch($records, array $columns, $handle = null): void
     {
+        $firstRecord = $records->first();
+        $usesProcessedRows = $firstRecord && is_object($firstRecord) && (get_class($firstRecord) === 'stdClass' || isset($firstRecord->{'Employee ID'}) || isset($firstRecord->{'Employee Name'}));
+        
         foreach ($records as $record) {
-            $row = [];
-            foreach ($columns as $column) {
-                $row[] = data_get($record, $column);
+            if ($usesProcessedRows) {
+                $row = [];
+                foreach ($columns as $columnName) {
+                    $row[] = $record->{$columnName} ?? null;
+                }
+                $this->writeRow($row);
+                $this->allRecords[] = (array) $record;
+            } else {
+                $row = [];
+                foreach ($columns as $column) {
+                    $row[] = data_get($record, $column);
+                }
+                $this->writeRow($row);
+                $this->allRecords[] = $record;
             }
-            $this->writeRow($row);
-            $this->allRecords[] = $record;
             $this->totalRecords++;
         }
     }
@@ -265,7 +286,7 @@ class DocxExportDriver implements ExportDriverInterface
         if (!empty($sections)) {
             $section = end($sections);
             $section->addTextBreak(1);
-            $footerText = ReportFormatter::getFooterText(1, $this->totalRecords);
+            $footerText = ReportFormatter::getFooterText($this->currentPageNumber, $this->totalRecords);
             $section->addText(
                 $footerText,
                 [

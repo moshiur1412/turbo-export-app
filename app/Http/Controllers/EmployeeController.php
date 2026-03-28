@@ -15,17 +15,22 @@ class EmployeeController extends Controller
         $perPage = $request->get('per_page', 50);
         $offset = ($page - 1) * $perPage;
         
-        $query = User::query();
+        $query = User::query()->with('userDetails');
+        
         $numericSearch = is_numeric($search) ? (int) $search : null;
+        $searchLower = strtolower($search);
         
         if ($search) {
-            $query->where(function($q) use ($search, $numericSearch) {
+            $query->where(function($q) use ($search, $numericSearch, $searchLower) {
                 if ($numericSearch !== null) {
                     $q->orWhere('id', $numericSearch);
                 }
-                $q->orWhere('name', 'like', "%{$search}%");
-                $q->orWhere('employee_id', 'like', "%{$search}%");
-                $q->orWhere('email', 'like', "%{$search}%");
+                $q->orWhereRaw('LOWER(name) LIKE ?', ["%{$searchLower}%"]);
+                $q->orWhereRaw('LOWER(employee_id) LIKE ?', ["%{$searchLower}%"]);
+                $q->orWhereRaw('LOWER(email) LIKE ?', ["%{$searchLower}%"]);
+                $q->orWhereHas('userDetails', function($q) use ($searchLower) {
+                    $q->whereRaw('LOWER(COALESCE(gender, \'\')) LIKE ?', ["%{$searchLower}%"]);
+                });
             });
         }
         
@@ -33,16 +38,16 @@ class EmployeeController extends Controller
             $query->orderByRaw("
                 CASE 
                     WHEN id = ? THEN 0
-                    WHEN name LIKE ? THEN 1
-                    WHEN name LIKE ? THEN 2
+                    WHEN LOWER(name) LIKE ? THEN 1
+                    WHEN LOWER(name) LIKE ? THEN 2
                     ELSE 3
                 END ASC, name ASC
             ", [$numericSearch, $search . '%', '%' . $search . '%']);
         } elseif ($search) {
             $query->orderByRaw("
                 CASE 
-                    WHEN name LIKE ? THEN 0
-                    WHEN name LIKE ? THEN 1
+                    WHEN LOWER(name) LIKE ? THEN 0
+                    WHEN LOWER(name) LIKE ? THEN 1
                     ELSE 2
                 END ASC, name ASC
             ", [$search . '%', '%' . $search . '%']);
@@ -51,7 +56,17 @@ class EmployeeController extends Controller
         }
         
         $total = $query->count();
-        $employees = $query->offset($offset)->limit($perPage)->get(['id', 'name', 'employee_id', 'email']);
+        $employees = $query->offset($offset)->limit($perPage)->get();
+
+        $employees = $employees->map(function($user) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'employee_id' => $user->employee_id,
+                'email' => $user->email,
+                'gender' => $user->userDetails?->gender,
+            ];
+        });
 
         return response()->json([
             'success' => true,

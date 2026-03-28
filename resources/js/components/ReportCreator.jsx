@@ -403,7 +403,7 @@ export default function ReportCreator({ onReportCreated }) {
             if (response.data.data) {
                 options = response.data.data.map(e => ({
                     value: e.id,
-                    label: `${e.name} (${e.employee_id || e.id})`,
+                    label: e.gender ? `${e.name} (${e.employee_id || e.id}) - ${e.gender}` : `${e.name} (${e.employee_id || e.id})`,
                 }));
             }
             if (append) {

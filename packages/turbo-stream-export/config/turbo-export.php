@@ -25,7 +25,11 @@ return [
     
     'default_format' => env('EXPORT_DEFAULT_FORMAT', 'csv'),
     
-    'memory_limit' => env('EXPORT_MEMORY_LIMIT', '512M'),
+    'memory_limit' => env('EXPORT_MEMORY_LIMIT', '1G'),
+    
+    'memory_limit_xlsx' => env('EXPORT_MEMORY_LIMIT_XLSX', '2G'),
+    'memory_limit_pdf' => env('EXPORT_MEMORY_LIMIT_PDF', '2G'),
+    'memory_limit_docx' => env('EXPORT_MEMORY_LIMIT_DOCX', '2G'),
     
     'batch_commit_size' => env('EXPORT_BATCH_COMMIT_SIZE', 50000),
     
